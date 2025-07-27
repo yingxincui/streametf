@@ -1,0 +1,18 @@
+{
+  "10%方案": {
+    "current_age": 34,
+    "current_income": 25.0,
+    "current_assets": 90.0,
+    "saving_rate": 50.0,
+    "annual_return": 10.0,
+    "target_year_expense": 15.0
+  },
+  "20%方案": {
+    "current_age": 34,
+    "current_income": 25.0,
+    "current_assets": 90.0,
+    "saving_rate": 50.0,
+    "annual_return": 20.0,
+    "target_year_expense": 15.0
+  }
+}
