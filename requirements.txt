@@ -9,5 +9,3 @@ Requests==2.32.4
 scipy==1.16.0
 seaborn==0.13.2
 streamlit==1.47.1
-<<<<<<< HEAD
-streamlit==1.47.0
