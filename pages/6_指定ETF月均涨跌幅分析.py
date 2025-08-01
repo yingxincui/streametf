@@ -22,12 +22,18 @@ st.markdown("""
 from utils import get_favorite_etfs, get_etf_options_with_favorites
 
 etf_options = get_etf_options_with_favorites(etf_list) if not etf_list.empty else list(DEFAULT_ETF_POOL.keys())
-
+# 修复default类型和内容
+raw_default = list(DEFAULT_ETF_POOL.keys())
+if etf_options and raw_default:
+    default = [type(etf_options[0])(x) for x in raw_default]
+    default = [x for x in default if x in etf_options]
+else:
+    default = []
 with st.container():
     selected_etfs = st.multiselect(
         "🔍 选择ETF",
         options=etf_options,
-        default=[etf for etf in list(DEFAULT_ETF_POOL.keys()) if etf in etf_options],
+        default=default,
         format_func=lambda x: f"{x} - {all_etfs.get(x, x)}"
     )
 

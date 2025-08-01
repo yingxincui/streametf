@@ -452,11 +452,19 @@ else:
 etf_list = list(DEFAULT_ETF_POOL.keys())
 all_etfs = DEFAULT_ETF_POOL
 
+# 修复default类型和内容
+raw_default = list(DEFAULT_ETF_POOL.keys())
+if etf_list and raw_default:
+    default = [type(etf_list[0])(x) for x in raw_default]
+    default = [x for x in default if x in etf_list]
+else:
+    default = []
+
 st.markdown("**选择指数池（可多选，默认6只）：**")
 selected_etfs = st.multiselect(
     "ETF池",
     options=list(all_etfs.keys()),
-    default=list(DEFAULT_ETF_POOL.keys()),
+    default=default,
     format_func=lambda x: f"{x} - {all_etfs.get(x, x)}"
 )
 
@@ -469,62 +477,102 @@ with col2:
 with col3:
     max_positions = st.number_input("最大持仓数量", min_value=1, max_value=5, value=2)
 
-# 只保留当前持仓tab
-run_btn = st.button("🚀 计算最新持仓")
-
-if run_btn:
+# 自动计算逻辑
+def auto_calculate_momentum():
+    """自动计算动量策略结果"""
     if len(selected_etfs) < 2:
         st.warning("请至少选择2只ETF")
-        st.stop()
+        return None, None
+    
     with st.spinner("正在获取ETF数据并计算持仓..."):
         try:
             selected_etfs_result, all_etfs_result = select_etfs(selected_etfs, all_etfs, momentum_period, ma_period)
-            st.markdown("---")
-            st.subheader("✅ 推荐持仓")
-            if selected_etfs_result:
-                holdings_data = []
-                for symbol, name, close, ma, momentum in selected_etfs_result:
-                    holdings_data.append({
-                        'ETF代码': symbol,
-                        'ETF名称': name,
-                        '当前价格(元)': f"{close:.2f}",
-                        f'{ma_period}日均线': f"{ma:.2f}",
-                        '价格-均线': f"{close - ma:.2f}",
-                        f'{momentum_period}日动量': f"{momentum*100:.2f}%",
-                        '持仓权重': f"{100/len(selected_etfs_result):.1f}%"
-                    })
-                holdings_df = pd.DataFrame(holdings_data)
-                st.dataframe(holdings_df.style.background_gradient(cmap="Greens"), use_container_width=True)
-                st.success(f"推荐持有 {len(selected_etfs_result)} 只ETF，等权重分配")
-            else:
-                st.warning("暂无符合条件的ETF，建议空仓")
-            st.markdown("---")
-            st.subheader("📊 所有ETF动量排名")
-            all_etfs_data = []
-            for symbol, name, close, ma, momentum, above_ma in all_etfs_result:
-                all_etfs_data.append({
-                    'ETF代码': symbol,
-                    'ETF名称': name,
-                    '当前价格(元)': f"{close:.2f}",
-                    f'{ma_period}日均线': f"{ma:.2f}",
-                    '价格-均线': f"{close - ma:.2f}",
-                    f'{momentum_period}日动量': f"{momentum*100:.2f}%",
-                    '站上均线': '✅' if above_ma else '❌',
-                    '推荐': '⭐' if (symbol, name, close, ma, momentum) in selected_etfs_result else ''
-                })
-            all_etfs_df = pd.DataFrame(all_etfs_data)
-            all_etfs_df = all_etfs_df.sort_values(f'{momentum_period}日动量', ascending=False, key=lambda x: pd.to_numeric(x.str.rstrip('%'), errors='coerce'))
-            st.dataframe(all_etfs_df.style.background_gradient(cmap="Blues"), use_container_width=True)
-            st.info("动量排名仅供参考，建议结合自身风险偏好决策。")
-            st.markdown("---")
-            st.markdown("""
-            **策略说明：**
-            - 仅持有价格高于均线的资产，避免下跌趋势踩雷
-            - 动量周期、均线周期、最大持仓数量均可自定义
-            - 推荐持仓为等权分配，便于实盘跟踪
-            - 本工具不构成投资建议，投资需谨慎
-            """)
+            return selected_etfs_result, all_etfs_result
         except Exception as e:
             st.error(f"计算失败: {e}")
             import traceback
             st.markdown("<div style='font-size:12px; color:#888;'>" + traceback.format_exc().replace('\n', '<br>') + "</div>", unsafe_allow_html=True)
+            return None, None
+
+# 检查是否需要重新计算
+current_params = {
+    'selected_etfs': selected_etfs,
+    'momentum_period': momentum_period,
+    'ma_period': ma_period,
+    'max_positions': max_positions
+}
+
+# 如果参数发生变化或没有缓存结果，则重新计算
+if ('momentum_params' not in st.session_state or 
+    st.session_state.momentum_params != current_params or
+    'momentum_results' not in st.session_state):
+    
+    st.session_state.momentum_params = current_params
+    selected_etfs_result, all_etfs_result = auto_calculate_momentum()
+    st.session_state.momentum_results = {
+        'selected_etfs_result': selected_etfs_result,
+        'all_etfs_result': all_etfs_result
+    }
+else:
+    # 使用缓存的结果
+    selected_etfs_result = st.session_state.momentum_results['selected_etfs_result']
+    all_etfs_result = st.session_state.momentum_results['all_etfs_result']
+
+# 显示结果
+if selected_etfs_result is not None and all_etfs_result is not None:
+    st.markdown("---")
+    st.subheader("✅ 推荐持仓")
+    if selected_etfs_result:
+        holdings_data = []
+        for symbol, name, close, ma, momentum in selected_etfs_result:
+            holdings_data.append({
+                'ETF代码': symbol,
+                'ETF名称': name,
+                '当前价格(元)': f"{close:.2f}",
+                f'{ma_period}日均线': f"{ma:.2f}",
+                '价格-均线': f"{close - ma:.2f}",
+                f'{momentum_period}日动量': f"{momentum*100:.2f}%",
+                '持仓权重': f"{100/len(selected_etfs_result):.1f}%"
+            })
+        holdings_df = pd.DataFrame(holdings_data)
+        st.dataframe(holdings_df.style.background_gradient(cmap="Greens"), use_container_width=True)
+        st.success(f"推荐持有 {len(selected_etfs_result)} 只ETF，等权重分配")
+    else:
+        st.warning("暂无符合条件的ETF，建议空仓")
+    
+    st.markdown("---")
+    st.subheader("📊 所有ETF动量排名")
+    all_etfs_data = []
+    for symbol, name, close, ma, momentum, above_ma in all_etfs_result:
+        all_etfs_data.append({
+            'ETF代码': symbol,
+            'ETF名称': name,
+            '当前价格(元)': f"{close:.2f}",
+            f'{ma_period}日均线': f"{ma:.2f}",
+            '价格-均线': f"{close - ma:.2f}",
+            f'{momentum_period}日动量': f"{momentum*100:.2f}%",
+            '站上均线': '✅' if above_ma else '❌',
+            '推荐': '⭐' if (symbol, name, close, ma, momentum) in selected_etfs_result else ''
+        })
+    all_etfs_df = pd.DataFrame(all_etfs_data)
+    all_etfs_df = all_etfs_df.sort_values(f'{momentum_period}日动量', ascending=False, key=lambda x: pd.to_numeric(x.str.rstrip('%'), errors='coerce'))
+    st.dataframe(all_etfs_df.style.background_gradient(cmap="Blues"), use_container_width=True)
+    st.info("动量排名仅供参考，建议结合自身风险偏好决策。")
+    
+    st.markdown("---")
+    st.markdown("""
+    **策略说明：**
+    - 仅持有价格高于均线的资产，避免下跌趋势踩雷
+    - 动量周期、均线周期、最大持仓数量均可自定义
+    - 推荐持仓为等权分配，便于实盘跟踪
+    - 本工具不构成投资建议，投资需谨慎
+    """)
+
+# 添加手动刷新按钮
+if st.button("🔄 手动刷新数据"):
+    # 清除缓存结果，强制重新计算
+    if 'momentum_results' in st.session_state:
+        del st.session_state.momentum_results
+    if 'momentum_params' in st.session_state:
+        del st.session_state.momentum_params
+    st.rerun()

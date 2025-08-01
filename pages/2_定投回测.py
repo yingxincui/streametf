@@ -78,10 +78,18 @@ def dca_backtest():
         
         from utils import get_etf_options_with_favorites
         etf_options = get_etf_options_with_favorites(etf_list)
+        # 默认值可根据实际业务逻辑设定，这里假设无默认值
+        raw_default = []
+        if etf_options and raw_default:
+            default = [type(etf_options[0])(x) for x in raw_default]
+            default = [x for x in default if x in etf_options]
+        else:
+            default = []
         selected_etfs = st.multiselect(
             "选择ETF (至少1只)",
             options=etf_options,
-            format_func=lambda x: f"{x} - {etf_list[etf_list['symbol'] == x]['name'].values[0]}"
+            format_func=lambda x: f"{x} - {etf_list[etf_list['symbol'] == x]['name'].values[0]}",
+            default=default
         )
         weights = []
         if len(selected_etfs) >= 1:

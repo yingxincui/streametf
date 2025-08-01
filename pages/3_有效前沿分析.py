@@ -131,6 +131,9 @@ def efficient_frontier_page():
         if selected_frontier != "无":
             sel = saved_frontiers[selected_frontier]
             default_etfs = sel.get("etfs", default_etfs)
+            # 确保default_etfs是整数列表（匹配etf_options的类型）
+            if default_etfs and isinstance(default_etfs[0], str):
+                default_etfs = [int(etf) for etf in default_etfs]
             default_start = pd.to_datetime(sel.get("date_range", ["2020-01-01", str(datetime.now().date())])[0])
             default_end = pd.to_datetime(sel.get("date_range", ["2020-01-01", str(datetime.now().date())])[1])
             default_risk_free = sel.get("risk_free_rate", 0.02)
@@ -138,6 +141,8 @@ def efficient_frontier_page():
             default_weights = sel.get("weights", [])
         from utils import get_etf_options_with_favorites
         etf_options = get_etf_options_with_favorites(etf_list)
+        # 过滤掉不在可用选项中的默认ETF
+        default_etfs = [etf for etf in default_etfs if etf in etf_options]
         selected_etfs = st.multiselect(
             "选择ETF (至少2只)",
             options=etf_options,

@@ -31,10 +31,18 @@ if favorite_etfs:
     other_etfs = [etf for etf in etf_options if etf not in favorite_etfs]
     etf_options = favorite_in_options + other_etfs
 
+# 修复default类型和内容
+raw_default = ["510300"]
+if etf_options and raw_default:
+    default = [type(etf_options[0])(x) for x in raw_default]
+    default = [x for x in default if x in etf_options]
+else:
+    default = []
+
 selected_codes = st.multiselect(
     "选择ETF（可多选）",
     options=etf_options,
-    default=["510300"],
+    default=default,
     format_func=lambda x: f"{x} - {all_etfs.get(x, x)}"
 )
 start_date = st.date_input("开始日期", pd.to_datetime("2015-01-01"))

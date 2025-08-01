@@ -83,7 +83,12 @@ def portfolio_backtest():
         options = get_etf_options_with_favorites(etf_list)
     else:
         options = get_etf_options_with_favorites(etf_list)
-    default_etfs = [c for c in default_etfs if c in options]
+    # 类型转换和过滤
+    if options and default_etfs:
+        default_etfs = [type(options[0])(x) for x in default_etfs]
+        default_etfs = [x for x in default_etfs if x in options]
+    else:
+        default_etfs = []
     selected_etfs = st.multiselect(
         "选择ETF (至少2只)",
         options=options,
