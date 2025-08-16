@@ -137,9 +137,15 @@ def fetch_etf_data_with_retry(symbol, start_date, end_date, etf_list, max_retrie
         cached_data = load_from_cache(symbol)
         if cached_data is not None:
             # 筛选时间范围
-            start_date = pd.to_datetime(start_date)
-            end_date = pd.to_datetime(end_date)
-            filtered_data = cached_data[(cached_data.index >= start_date) & (cached_data.index <= end_date)]
+            if start_date is not None:
+                start_date = pd.to_datetime(start_date)
+                end_date = pd.to_datetime(end_date)
+                filtered_data = cached_data[(cached_data.index >= start_date) & (cached_data.index <= end_date)]
+            else:
+                # 创立以来的情况，使用所有缓存数据
+                end_date = pd.to_datetime(end_date)
+                filtered_data = cached_data[cached_data.index <= end_date]
+            
             if not filtered_data.empty:
                 st.info(f"使用{symbol}缓存数据")
                 # 返回符合组合回测格式的数据
@@ -183,9 +189,14 @@ def fetch_etf_data_with_retry(symbol, start_date, end_date, etf_list, max_retrie
             save_to_cache(symbol, df)
             
             # 筛选请求的时间范围
-            start_date = pd.to_datetime(start_date)
-            end_date = pd.to_datetime(end_date)
-            filtered_df = df[(df.index >= start_date) & (df.index <= end_date)]
+            if start_date is not None:
+                start_date = pd.to_datetime(start_date)
+                end_date = pd.to_datetime(end_date)
+                filtered_df = df[(df.index >= start_date) & (df.index <= end_date)]
+            else:
+                # 创立以来的情况，使用所有数据
+                end_date = pd.to_datetime(end_date)
+                filtered_df = df[df.index <= end_date]
             
             if filtered_df.empty:
                 st.warning(f"⚠️ {etf_name}({symbol}) 在选定日期范围内无数据")
@@ -207,9 +218,15 @@ def fetch_etf_data_with_retry(symbol, start_date, end_date, etf_list, max_retrie
             # 尝试使用历史缓存数据
             cached_data = load_from_cache(symbol)
             if cached_data is not None:
-                start_date = pd.to_datetime(start_date)
-                end_date = pd.to_datetime(end_date)
-                filtered_data = cached_data[(cached_data.index >= start_date) & (cached_data.index <= end_date)]
+                if start_date is not None:
+                    start_date = pd.to_datetime(start_date)
+                    end_date = pd.to_datetime(end_date)
+                    filtered_data = cached_data[(cached_data.index >= start_date) & (cached_data.index <= end_date)]
+                else:
+                    # 创立以来的情况，使用所有缓存数据
+                    end_date = pd.to_datetime(end_date)
+                    filtered_data = cached_data[cached_data.index <= end_date]
+                
                 if not filtered_data.empty:
                     st.warning(f"使用{symbol}历史缓存数据")
                     clean_symbol = clean_etf_symbol(symbol)
