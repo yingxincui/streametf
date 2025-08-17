@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 from datetime import datetime
 from data import get_etf_list, fetch_etf_data_with_retry
 from utils import get_etf_options_with_favorites, get_favorite_etfs
@@ -178,37 +180,48 @@ if run_btn:
                 month_labels = [month_names[m] for m in months]
                 monthly_win_rates = [monthly_stats[m]['月度胜率'] for m in months]
                 
-                fig1, ax1 = plt.subplots(figsize=(10, 5))
-                bars = ax1.bar(month_labels, monthly_win_rates, 
-                              color=['red' if r > 0.5 else 'green' for r in monthly_win_rates], alpha=0.7)
-                ax1.set_xlabel('月份')
-                ax1.set_ylabel('月度胜率')
-                ax1.set_title(f'{symbol} - {name} 各月胜率分布')
-                ax1.axhline(y=0.5, color='black', linestyle='--', alpha=0.5, label='50%基准线')
-                ax1.legend()
-                ax1.grid(True, alpha=0.3)
-                plt.xticks(rotation=45)
-                st.pyplot(fig1)
+                fig1 = go.Figure()
+                fig1.add_trace(go.Bar(x=month_labels, y=monthly_win_rates, 
+                                       name='月度胜率', marker_color=['red' if r > 0.5 else 'green' for r in monthly_win_rates]))
+                
+                # 添加50%基准线
+                fig1.add_hline(y=0.5, line_width=1, line_dash="dash", line_color="black", opacity=0.5, annotation_text="50%基准线")
+                
+                fig1.update_layout(
+                    title=f'{symbol} - {name} 各月胜率分布',
+                    xaxis_title='月份',
+                    yaxis_title='月度胜率',
+                    showlegend=True,
+                    hovermode='x unified',
+                    height=400
+                )
+                st.plotly_chart(fig1, use_container_width=True)
             
             with col2:
                 # 月度平均收益柱状图
                 monthly_avg_returns = [monthly_stats[m]['月度平均收益'] for m in months]
                 
-                fig2, ax2 = plt.subplots(figsize=(10, 5))
-                bars = ax2.bar(month_labels, monthly_avg_returns, 
-                              color=['red' if r > 0 else 'green' for r in monthly_avg_returns], alpha=0.7)
-                ax2.set_xlabel('月份')
-                ax2.set_ylabel('月度平均收益率')
-                ax2.set_title(f'{symbol} - {name} 各月平均收益')
-                ax2.axhline(y=0, color='black', linestyle='--', alpha=0.5)
-                ax2.grid(True, alpha=0.3)
-                plt.xticks(rotation=45)
-                st.pyplot(fig2)
+                fig2 = go.Figure()
+                fig2.add_trace(go.Bar(x=month_labels, y=monthly_avg_returns, 
+                                       name='月度平均收益', marker_color=['red' if r > 0 else 'green' for r in monthly_avg_returns]))
+                
+                # 添加零线
+                fig2.add_hline(y=0, line_width=1, line_dash="dash", line_color="black", opacity=0.5, annotation_text="零线")
+                
+                fig2.update_layout(
+                    title=f'{symbol} - {name} 各月平均收益',
+                    xaxis_title='月份',
+                    yaxis_title='月度平均收益率',
+                    showlegend=True,
+                    hovermode='x unified',
+                    height=400
+                )
+                st.plotly_chart(fig2, use_container_width=True)
                 
             # 月度收益分布箱线图
             st.subheader(f"📦 {symbol} - {name} 各月收益分布")
             
-            fig3, ax3 = plt.subplots(figsize=(12, 6))
+            fig3 = go.Figure()
             returns_data = []
             labels = []
             for month in months:
@@ -218,17 +231,29 @@ if run_btn:
                     labels.append(month_names[month])
             
             if returns_data:
-                box_plot = ax3.boxplot(returns_data, labels=labels, patch_artist=True)
-                for patch in box_plot['boxes']:
-                    patch.set_facecolor('lightblue')
-                    patch.set_alpha(0.7)
-                ax3.set_xlabel('月份')
-                ax3.set_ylabel('月度收益率 (%)')
-                ax3.set_title(f'{symbol} - {name} 各月收益分布箱线图')
-                ax3.axhline(y=0, color='red', linestyle='--', alpha=0.5)
-                ax3.grid(True, alpha=0.3)
-                plt.xticks(rotation=45)
-                st.pyplot(fig3)
+                # 为每个月份添加箱线图
+                for i, (month_data, month_label) in enumerate(zip(returns_data, labels)):
+                    fig3.add_trace(go.Box(
+                        y=month_data,
+                        name=month_label,
+                        boxpoints='outliers',
+                        jitter=0.3,
+                        pointpos=-1.8,
+                        marker_color=px.colors.qualitative.Set3[i % len(px.colors.qualitative.Set3)]
+                    ))
+                
+                fig3.update_layout(
+                    title=f'{symbol} - {name} 各月收益分布箱线图',
+                    yaxis_title='月度收益率 (%)',
+                    showlegend=True,
+                    hovermode='x unified',
+                    height=500
+                )
+                
+                # 添加零线
+                fig3.add_hline(y=0, line_width=1, line_dash="dash", line_color="red", opacity=0.5)
+                
+                st.plotly_chart(fig3, use_container_width=True)
             
             # 累计收益趋势图
             st.subheader(f"📈 {symbol} - {name} 累计收益趋势图")
@@ -257,11 +282,11 @@ if run_btn:
                         }
             
             # 绘制趋势图
-            fig_trend, ax_trend = plt.subplots(figsize=(14, 8))
+            fig_trend = go.Figure()
             
             # 绘制标的累计收益
-            ax_trend.plot(buyhold_cum_returns.index, buyhold_cum_returns.values, 
-                         linewidth=2, color='black', label='标的累计收益', alpha=0.8)
+            fig_trend.add_trace(go.Scatter(x=buyhold_cum_returns.index, y=buyhold_cum_returns.values, 
+                                           mode='lines', name='标的累计收益', line=dict(width=2, color='black'), opacity=0.8))
             
             # 绘制每月累计收益
             colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FCEA2B', '#FF9FF3',
@@ -271,20 +296,18 @@ if run_btn:
             
             for month in range(1, 13):
                 if month in monthly_cum_returns:
-                    ax_trend.plot(monthly_cum_returns[month]['dates'], 
-                                monthly_cum_returns[month]['returns'],
-                                linewidth=1.5, color=colors[month-1], 
-                                label=f'{month_names_full[month-1]}累计收益', alpha=0.7)
+                    fig_trend.add_trace(go.Scatter(x=monthly_cum_returns[month]['dates'], 
+                                                   y=monthly_cum_returns[month]['returns'],
+                                                   mode='lines', name=f'{month_names_full[month-1]}累计收益', line=dict(width=1.5, color=colors[month-1]), opacity=0.7))
             
-            ax_trend.set_xlabel('日期')
-            ax_trend.set_ylabel('累计收益率 (%)')
-            ax_trend.set_title(f'{symbol} - {name} 标的vs各月累计收益趋势')
-            ax_trend.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-            ax_trend.grid(True, alpha=0.3)
-            ax_trend.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            st.pyplot(fig_trend)
+            fig_trend.update_layout(
+                title=f'{symbol} - {name} 标的vs各月累计收益趋势',
+                xaxis_title='日期',
+                yaxis_title='累计收益率 (%)',
+                showlegend=True,
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_trend, use_container_width=True)
         else:
             st.info(f"{symbol} - {name} 暂无有效数据")
         
@@ -371,7 +394,7 @@ if run_btn:
             st.subheader(f"📊 月度胜率与收益关系分析")
             st.markdown(f"**分析标的：** {etf_names_str}")
             
-            fig6, ax6 = plt.subplots(figsize=(12, 8))
+            fig6 = go.Figure()
             
             months = list(summary_stats.keys())
             month_labels = [month_names[m] for m in months]
@@ -379,44 +402,51 @@ if run_btn:
             monthly_avg_returns = [summary_stats[m]['月度平均收益'] for m in months]
             
             # 散点图
-            scatter = ax6.scatter(monthly_win_rates, monthly_avg_returns, 
-                                 s=150, alpha=0.7, c=range(len(months)), cmap='tab10')
+            fig6.add_trace(go.Scatter(x=monthly_win_rates, y=monthly_avg_returns, 
+                                        mode='markers', name='月度胜率与收益', 
+                                        marker=dict(size=15, opacity=0.7, 
+                                                  color=px.colors.qualitative.Set3[:len(months)])))
             
             # 添加月份标签
             for i, (wr, ret, label) in enumerate(zip(monthly_win_rates, monthly_avg_returns, month_labels)):
-                ax6.annotate(label, (wr, ret), xytext=(5, 5), textcoords='offset points', 
-                           fontsize=10, alpha=0.8)
+                fig6.add_annotation(
+                    x=wr, y=ret, text=label, showarrow=True, arrowhead=2, ax=0, ay=-30
+                )
             
             # 添加象限分割线
-            ax6.axhline(y=0, color='black', linestyle='-', alpha=0.3)
-            ax6.axvline(x=0.5, color='black', linestyle='-', alpha=0.3)
+            fig6.add_hline(y=0, line_width=1, line_dash="dash", line_color="black", opacity=0.3)
+            fig6.add_vline(x=0.5, line_width=1, line_dash="dash", line_color="black", opacity=0.3)
             
             # 添加象限标签
-            ax6.text(0.75, max(monthly_avg_returns)*0.8, '高胜率\n高收益', 
-                    ha='center', va='center', fontsize=12, 
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.5))
-            ax6.text(0.25, max(monthly_avg_returns)*0.8, '低胜率\n高收益', 
-                    ha='center', va='center', fontsize=12,
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.5))
-            ax6.text(0.75, min(monthly_avg_returns)*0.8, '高胜率\n低收益', 
-                    ha='center', va='center', fontsize=12,
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="orange", alpha=0.5))
-            ax6.text(0.25, min(monthly_avg_returns)*0.8, '低胜率\n低收益', 
-                    ha='center', va='center', fontsize=12,
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="lightcoral", alpha=0.5))
+            fig6.add_annotation(
+                x=0.75, y=max(monthly_avg_returns)*0.8, text='高胜率<br>高收益', showarrow=False,
+                font=dict(size=12),
+                bordercolor="lightgreen", borderwidth=1, borderpad=3, bgcolor="lightgreen", opacity=0.5
+            )
+            fig6.add_annotation(
+                x=0.25, y=max(monthly_avg_returns)*0.8, text='低胜率<br>高收益', showarrow=False,
+                font=dict(size=12),
+                bordercolor="yellow", borderwidth=1, borderpad=3, bgcolor="yellow", opacity=0.5
+            )
+            fig6.add_annotation(
+                x=0.75, y=min(monthly_avg_returns)*0.8, text='高胜率<br>低收益', showarrow=False,
+                font=dict(size=12),
+                bordercolor="orange", borderwidth=1, borderpad=3, bgcolor="orange", opacity=0.5
+            )
+            fig6.add_annotation(
+                x=0.25, y=min(monthly_avg_returns)*0.8, text='低胜率<br>低收益', showarrow=False,
+                font=dict(size=12),
+                bordercolor="lightcoral", borderwidth=1, borderpad=3, bgcolor="lightcoral", opacity=0.5
+            )
             
-            ax6.set_xlabel('月度胜率')
-            ax6.set_ylabel('月度平均收益率')
-            
-            # 构建标题，包含标的信息
-            title_etfs = "、".join([str(etf) for etf in selected_etfs[:3]])  # 显示前3个，避免标题过长
-            if len(selected_etfs) > 3:
-                title_etfs += f"等{len(selected_etfs)}只ETF"
-            ax6.set_title(f'{title_etfs} - 各月胜率与收益关系图')
-            ax6.grid(True, alpha=0.3)
-            ax6.set_xlim(0, 1)
-            
-            st.pyplot(fig6)
+            fig6.update_layout(
+                title=f'{etf_names_str} - 各月胜率与收益关系图',
+                xaxis_title='月度胜率',
+                yaxis_title='月度平均收益率',
+                showlegend=True,
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig6, use_container_width=True)
             
             # 找出胜率最高和最低的月份
             best_month = max(summary_stats.items(), key=lambda x: x[1]['月度胜率'])

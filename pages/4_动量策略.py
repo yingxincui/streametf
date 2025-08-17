@@ -1,13 +1,18 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 import akshare as ak
 from datetime import datetime, timedelta
 import os
 import json
 
 # 动量策略页面
+
+# 控制是否显示缓存日志
+SHOW_CACHE_LOGS = False
 
 # 默认ETF池
 DEFAULT_ETF_POOL = {
@@ -404,6 +409,9 @@ def calculate_sharpe_ratio(values):
     return sharpe
 
 def small_log(msg):
+    # 如果是缓存相关的日志且设置为不显示，则跳过
+    if not SHOW_CACHE_LOGS and ("缓存" in msg or "使用" in msg and "数据" in msg):
+        return
     st.markdown(f"<div style='font-size:12px; color:#888;'>{msg}</div>", unsafe_allow_html=True)
 
 # 修改页面标题
@@ -537,27 +545,638 @@ if selected_etfs_result is not None and all_etfs_result is not None:
         holdings_df = pd.DataFrame(holdings_data)
         st.dataframe(holdings_df.style.background_gradient(cmap="Greens"), use_container_width=True)
         st.success(f"推荐持有 {len(selected_etfs_result)} 只ETF，等权重分配")
+        
+        # 添加所有ETF动量排名表格
+        st.markdown("---")
+        st.subheader("📊 所有ETF动量排名")
+        all_etfs_data = []
+        for symbol, name, close, ma, momentum, above_ma in all_etfs_result:
+            all_etfs_data.append({
+                'ETF代码': symbol,
+                'ETF名称': name,
+                '当前价格(元)': f"{close:.2f}",
+                f'{ma_period}日均线': f"{ma:.2f}",
+                '价格-均线': f"{close - ma:.2f}",
+                f'{momentum_period}日动量': f"{momentum*100:.2f}%",
+                '站上均线': '✅' if above_ma else '❌',
+                '推荐': '⭐' if (symbol, name, close, ma, momentum) in selected_etfs_result else ''
+            })
+        all_etfs_df = pd.DataFrame(all_etfs_data)
+        all_etfs_df = all_etfs_df.sort_values(f'{momentum_period}日动量', ascending=False, key=lambda x: pd.to_numeric(x.str.rstrip('%'), errors='coerce'))
+        st.dataframe(all_etfs_df.style.background_gradient(cmap="Blues"), use_container_width=True)
+        st.info("动量排名仅供参考，建议结合自身风险偏好决策。")
+        
+        # 添加横向柱状图：动量对比
+        st.markdown("---")
+        st.subheader("📊 动量对比柱状图")
+        
+        # 准备柱状图数据
+        bar_data = []
+        for symbol, name, close, ma, momentum, above_ma in all_etfs_result:
+            bar_data.append({
+                'ETF代码': symbol,
+                'ETF名称': name,
+                '动量值': momentum * 100,  # 转换为百分比
+                '站上均线': above_ma
+            })
+        
+        bar_df = pd.DataFrame(bar_data)
+        bar_df = bar_df.sort_values('动量值', ascending=True)  # 升序排列，便于横向显示
+        
+        # 创建横向柱状图
+        fig_bar = go.Figure()
+        
+        for _, row in bar_df.iterrows():
+            # 根据动量值选择颜色：红色表示正动量，绿色表示负动量
+            if row['动量值'] > 0:
+                color = '#d32f2f'  # 红色表示正动量
+            elif row['动量值'] < 0:
+                color = '#388e3c'  # 绿色表示负动量
+            else:
+                color = '#666666'  # 灰色表示零动量
+            
+            fig_bar.add_trace(go.Bar(
+                y=[f"{row['ETF代码']} - {row['ETF名称']}"],
+                x=[row['动量值']],
+                orientation='h',
+                marker_color=color,
+                name=f"{row['ETF代码']} - {row['ETF名称']}",
+                hovertemplate='<b>%{y}</b><br>' +
+                            '动量值: %{x:.2f}%<br>' +
+                            '状态: ' + ('✅ 站上均线' if row['站上均线'] else '❌ 未站上均线') + '<br>' +
+                            '<extra></extra>'
+            ))
+        
+        # 设置图表样式
+        fig_bar.update_layout(
+            title_text='ETF动量对比',
+            title_x=0.5,
+            font_size=12,
+            showlegend=False,
+            xaxis_title='动量值 (%)',
+            yaxis_title='ETF',
+            height=400,
+            xaxis_tickformat=",.2f",
+            hovermode='closest'
+        )
+        
+        # 添加零线
+        fig_bar.add_vline(x=0, line_width=1, line_dash="dash", line_color="#666666", opacity=0.7)
+        
+        # 显示柱状图
+        st.plotly_chart(fig_bar, use_container_width=True)
+        
+        # 添加柱状图说明
+        st.info("""
+        **柱状图说明：**
+        - 红色柱：正动量（价格上涨趋势）
+        - 绿色柱：负动量（价格下跌趋势）
+        - 灰色柱：零动量（价格无变化）
+        - 柱长表示动量值大小
+        - 零线左侧为负动量，右侧为正动量
+        - 状态列显示是否站上均线（✅站上，❌未站上）
+        """)
+        
+        # 添加趋势图：展示近一年标的本身的走势
+        st.markdown("---")
+        st.subheader("📈 近一年走势趋势图")
+        
+        # 计算近一年的累计涨跌幅
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+        
+        # 创建趋势图
+        fig = go.Figure()
+        
+        # 定义颜色方案 - 使用确定存在的颜色
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', 
+                 '#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#a6cee3', '#fb9a99',
+                 '#fdbf6f', '#cab2d6', '#ffff99', '#b15928', '#fccde5', '#d9d9d9']
+        
+        # 收集所有数据用于计算y轴范围
+        all_cumulative_returns = []
+        
+        # 收集所有ETF的累计收益数据用于计算等权配置
+        etf_returns_data = {}
+        
+        for i, (symbol, name, _, _, _, _) in enumerate(all_etfs_result):
+            try:
+                # 获取历史数据
+                df = fetch_etf_data(symbol)
+                if not df.empty:
+                    # 筛选近一年数据
+                    df_filtered = df[(df.index >= start_date) & (df.index <= end_date)]
+                    if not df_filtered.empty:
+                        # 计算累计涨跌幅（以年初为基准）
+                        first_price = df_filtered.iloc[0]['Close']
+                        cumulative_returns = (df_filtered['Close'] / first_price - 1) * 100
+                        all_cumulative_returns.extend(cumulative_returns.tolist())
+                        
+                        # 存储数据用于计算等权配置
+                        etf_returns_data[symbol] = {
+                            'dates': df_filtered.index,
+                            'returns': cumulative_returns,
+                            'name': f"{symbol} - {name}"
+                        }
+                        
+                        # 绘制趋势线，使用循环颜色
+                        color = colors[i % len(colors)]
+                        fig.add_trace(go.Scatter(
+                            x=df_filtered.index, 
+                            y=cumulative_returns,
+                            mode='lines+markers', 
+                            name=f"{symbol} - {name}", 
+                            line=dict(color=color, width=2), 
+                            marker=dict(size=3),
+                            hovertemplate='<b>%{fullData.name}</b><br>' +
+                                        '时间: %{x}<br>' +
+                                        '累计涨跌幅: %{y:.2f}%<br>' +
+                                        '<extra></extra>'
+                        ))
+                        
+            except Exception as e:
+                st.warning(f"获取 {symbol} 趋势数据失败: {e}")
+                continue
+        
+        # 计算并绘制等权配置收益曲线
+        if len(etf_returns_data) > 1:
+            try:
+                # 找到所有ETF的共同日期
+                common_dates = None
+                for symbol, data in etf_returns_data.items():
+                    if common_dates is None:
+                        common_dates = set(data['dates'])
+                    else:
+                        common_dates = common_dates.intersection(set(data['dates']))
+                
+                if common_dates and len(common_dates) > 10:
+                    common_dates = sorted(list(common_dates))
+                    
+                    # 计算等权配置的累计收益
+                    equal_weight_returns = []
+                    for date in common_dates:
+                        daily_return = 0
+                        valid_returns = 0
+                        for symbol, data in etf_returns_data.items():
+                            if date in data['dates']:
+                                # 找到该日期对应的收益率
+                                date_idx = data['dates'].get_loc(date)
+                                if date_idx > 0:  # 不是第一个数据点
+                                    prev_date_idx = date_idx - 1
+                                    prev_date = data['dates'][prev_date_idx]
+                                    if prev_date in data['dates']:
+                                        prev_return = data['returns'].iloc[prev_date_idx]
+                                        curr_return = data['returns'].iloc[date_idx]
+                                        # 计算日收益率
+                                        daily_return += (curr_return - prev_return) / 100  # 转换为小数
+                                        valid_returns += 1
+                        
+                        if valid_returns > 0:
+                            # 计算等权平均日收益率
+                            avg_daily_return = daily_return / valid_returns
+                            if len(equal_weight_returns) == 0:
+                                equal_weight_returns.append(0)  # 起始点为0%
+                            else:
+                                # 累加日收益率
+                                equal_weight_returns.append(equal_weight_returns[-1] + avg_daily_return * 100)
+                        else:
+                            if len(equal_weight_returns) > 0:
+                                equal_weight_returns.append(equal_weight_returns[-1])
+                            else:
+                                equal_weight_returns.append(0)
+                    
+                    # 绘制等权配置曲线
+                    fig.add_trace(go.Scatter(
+                        x=common_dates,
+                        y=equal_weight_returns,
+                        mode='lines+markers',
+                        name='🏆 等权配置',
+                        line=dict(color='#FF6B6B', width=3, dash='dash'),
+                        marker=dict(size=4),
+                        hovertemplate='<b>🏆 等权配置</b><br>' +
+                                    '时间: %{x}<br>' +
+                                    '累计涨跌幅: %{y:.2f}%<br>' +
+                                    '<extra></extra>'
+                    ))
+                    
+                    # 将等权配置数据也加入y轴范围计算
+                    all_cumulative_returns.extend(equal_weight_returns)
+                    
+            except Exception as e:
+                st.warning(f"计算等权配置收益失败: {e}")
+        
+        # 添加零线作为参考
+        fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="#666666", opacity=0.7)
+        
+        # 设置图表样式
+        fig.update_layout(
+            title_text='近一年累计涨跌幅趋势',
+            title_x=0.5,
+            font_size=14,
+            showlegend=True,
+            legend_orientation="v",  # 改为垂直布局
+            legend_x=1.02,  # 放在右侧
+            legend_y=0.5,   # 垂直居中
+            xaxis_title='时间',
+            yaxis_title='累计涨跌幅 (%)',
+            xaxis_tickangle=45,
+            xaxis_tickformat="%Y-%m-%d",
+            yaxis_tickformat=",.2f",
+            hovermode='x unified',
+            height=700  # 增加图表高度到700px
+        )
+        
+        # 设置y轴范围，确保零线在中间
+        if all_cumulative_returns:
+            y_min = min(all_cumulative_returns)
+            y_max = max(all_cumulative_returns)
+            
+            # 计算合适的Y轴范围
+            y_range = max(abs(y_min), abs(y_max))
+            
+            # 如果数据范围太小，设置最小范围
+            if y_range < 5:
+                y_range = 10
+            
+            # 设置Y轴范围，给数据留出适当的边距
+            y_padding = y_range * 0.15  # 15%的边距
+            fig.update_layout(
+                yaxis_range=[y_min - y_padding, y_max + y_padding]
+            )
+        
+        # 显示图表
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # 添加累计涨跌幅对比柱状图
+        st.markdown("---")
+        st.subheader("📊 近一年累计涨跌幅对比")
+        
+        # 准备柱状图数据
+        returns_bar_data = []
+        for i, (symbol, name, _, _, _, _) in enumerate(all_etfs_result):
+            try:
+                # 获取历史数据
+                df = fetch_etf_data(symbol)
+                if not df.empty:
+                    # 筛选近一年数据
+                    df_filtered = df[(df.index >= start_date) & (df.index <= end_date)]
+                    if not df_filtered.empty:
+                        # 计算累计涨跌幅
+                        first_price = df_filtered.iloc[0]['Close']
+                        last_price = df_filtered.iloc[-1]['Close']
+                        cumulative_return = (last_price / first_price - 1) * 100
+                        
+                        returns_bar_data.append({
+                            'ETF代码': symbol,
+                            'ETF名称': name,
+                            '累计涨跌幅': cumulative_return,
+                            '颜色': colors[i % len(colors)]  # 使用与趋势图相同的颜色
+                        })
+            except Exception as e:
+                continue
+        
+        if returns_bar_data:
+            returns_bar_df = pd.DataFrame(returns_bar_data)
+            returns_bar_df = returns_bar_df.sort_values('累计涨跌幅', ascending=True)  # 升序排列
+            
+            # 创建横向柱状图
+            fig_returns_bar = go.Figure()
+            
+            for _, row in returns_bar_df.iterrows():
+                fig_returns_bar.add_trace(go.Bar(
+                    y=[f"{row['ETF代码']} - {row['ETF名称']}"],
+                    x=[row['累计涨跌幅']],
+                    orientation='h',
+                    marker_color=row['颜色'],
+                    name=f"{row['ETF代码']} - {row['ETF名称']}",
+                    hovertemplate='<b>%{y}</b><br>' +
+                                '累计涨跌幅: %{x:.2f}%<br>' +
+                                '<extra></extra>'
+                ))
+            
+            # 设置图表样式
+            fig_returns_bar.update_layout(
+                title_text='近一年累计涨跌幅对比',
+                title_x=0.5,
+                font_size=12,
+                showlegend=False,
+                xaxis_title='累计涨跌幅 (%)',
+                yaxis_title='ETF',
+                height=400,
+                xaxis_tickformat=",.2f",
+                hovermode='closest'
+            )
+            
+            # 添加零线
+            fig_returns_bar.add_vline(x=0, line_width=1, line_dash="dash", line_color="#666666", opacity=0.7)
+            
+            # 显示柱状图
+            st.plotly_chart(fig_returns_bar, use_container_width=True)
+            
+            # 添加柱状图说明
+            st.info("""
+            **累计涨跌幅柱状图说明：**
+            - 柱长表示累计涨跌幅大小
+            - 零线左侧为负收益，右侧为正收益
+            - 颜色与上方趋势图保持一致，便于对应
+            - 按累计涨跌幅排序，便于识别表现最好和最差的ETF
+            """)
+        
+        # 添加标的相关因子分析
+        st.markdown("---")
+        st.subheader("🔍 标的相关因子分析")
+        
+        # 计算相关性矩阵
+        try:
+            # 准备收益率数据 - 使用所有选中的ETF
+            returns_data = {}
+            common_dates = None
+            
+            for symbol in selected_etfs:  # 使用selected_etfs而不是all_etfs_result
+                df = fetch_etf_data(symbol)
+                if not df.empty:
+                    # 筛选近一年数据
+                    df_filtered = df[(df.index >= start_date) & (df.index <= end_date)]
+                    if not df_filtered.empty:
+                        # 计算日收益率
+                        df_filtered['Returns'] = df_filtered['Close'].pct_change()
+                        returns_data[symbol] = df_filtered['Returns'].dropna()
+                        
+                        # 找到共同日期
+                        if common_dates is None:
+                            common_dates = set(returns_data[symbol].index)
+                        else:
+                            common_dates = common_dates.intersection(set(returns_data[symbol].index))
+            
+            if common_dates and len(common_dates) > 30:
+                # 对齐数据
+                aligned_returns = {}
+                for symbol in returns_data:
+                    aligned_returns[symbol] = returns_data[symbol].loc[list(common_dates)]
+                
+                # 创建收益率DataFrame
+                returns_df = pd.DataFrame(aligned_returns)
+                
+                # 计算相关性矩阵
+                correlation_matrix = returns_df.corr()
+                
+                # 计算风险指标
+                risk_metrics = {}
+                for symbol in returns_df.columns:
+                    returns = returns_df[symbol].dropna()
+                    if len(returns) > 0:
+                        # 计算累积净值
+                        cumulative_returns = (1 + returns).cumprod()
+                        
+                        # 获取ETF名称
+                        etf_name = all_etfs.get(symbol, symbol)
+                        
+                        risk_metrics[symbol] = {
+                            'ETF名称': etf_name,
+                            '年化波动率': returns.std() * np.sqrt(252) * 100,
+                            '年化收益率': returns.mean() * 252 * 100,
+                            '夏普比率': (returns.mean() * 252 - 0.03) / (returns.std() * np.sqrt(252)) if returns.std() > 0 else 0,
+                            '最大回撤': calculate_max_drawdown(cumulative_returns) * 100
+                        }
+                
+                # 显示相关性热力图
+                st.markdown("**📊 相关性热力图**")
+                
+                # 创建带ETF名称的相关性矩阵
+                correlation_with_names = correlation_matrix.copy()
+                correlation_with_names.columns = [f"{col} - {all_etfs.get(col, col)}" for col in correlation_with_names.columns]
+                correlation_with_names.index = [f"{idx} - {all_etfs.get(idx, idx)}" for idx in correlation_with_names.index]
+                
+                fig_corr = go.Figure(data=go.Heatmap(
+                    z=correlation_with_names.values,
+                    x=correlation_with_names.columns,
+                    y=correlation_with_names.index,
+                    colorscale='RdBu',
+                    zmid=0,
+                    text=correlation_with_names.round(2).values,
+                    texttemplate="%{text}",
+                    textfont={"size": 10},
+                    hoverongaps=False
+                ))
+                
+                fig_corr.update_layout(
+                    title_text='ETF日收益率相关性矩阵',
+                    title_x=0.5,
+                    height=500,
+                    xaxis_title='ETF',
+                    yaxis_title='ETF'
+                )
+                
+                st.plotly_chart(fig_corr, use_container_width=True)
+                
+                # 显示风险指标表格
+                st.markdown("**📈 风险指标对比**")
+                risk_df = pd.DataFrame(risk_metrics).T
+                
+                # 格式化显示 - 确保保留2位小数
+                formatted_risk_df = risk_df.copy()
+                
+                # 先确保数值类型正确，然后进行格式化
+                formatted_risk_df['年化波动率'] = pd.to_numeric(formatted_risk_df['年化波动率'], errors='coerce').round(2).astype(str) + '%'
+                formatted_risk_df['年化收益率'] = pd.to_numeric(formatted_risk_df['年化收益率'], errors='coerce').round(2).astype(str) + '%'
+                formatted_risk_df['最大回撤'] = pd.to_numeric(formatted_risk_df['最大回撤'], errors='coerce').round(2).astype(str) + '%'
+                formatted_risk_df['夏普比率'] = pd.to_numeric(formatted_risk_df['夏普比率'], errors='coerce').round(2)
+                
+                st.dataframe(formatted_risk_df, use_container_width=True)
+                
+                # 相关性分析说明
+                st.info("""
+                **相关因子分析说明：**
+                - **相关性矩阵**：数值越接近1表示正相关越强，越接近-1表示负相关越强
+                - **年化波动率**：反映价格波动风险，数值越大风险越高
+                - **年化收益率**：年化后的收益率表现
+                - **夏普比率**：风险调整后收益，数值越高越好（假设无风险利率3%）
+                - **最大回撤**：历史最大下跌幅度，反映下行风险
+                """)
+                
+                # 投资组合建议
+                st.markdown("**💡 投资组合建议**")
+                
+                # 找出相关性最低的ETF对
+                min_corr = 1.0
+                min_corr_pair = None
+                for i in range(len(correlation_matrix.columns)):
+                    for j in range(i+1, len(correlation_matrix.columns)):
+                        corr_val = abs(correlation_matrix.iloc[i, j])
+                        if corr_val < min_corr:
+                            min_corr = corr_val
+                            min_corr_pair = (correlation_matrix.columns[i], correlation_matrix.columns[j])
+                
+                if min_corr_pair:
+                    st.success(f"**低相关性组合推荐**：{min_corr_pair[0]} 和 {min_corr_pair[1]} (相关性: {min_corr:.3f})")
+                
+                # 找出夏普比率最高的ETF
+                best_sharpe = max(risk_metrics.items(), key=lambda x: x[1]['夏普比率'])
+                st.info(f"**最佳风险调整收益**：{best_sharpe[0]} (夏普比率: {best_sharpe[1]['夏普比率']:.2f})")
+                
+            else:
+                st.warning("数据不足，无法进行相关因子分析")
+                
+        except Exception as e:
+            st.error(f"相关因子分析失败: {e}")
+        
+        # 添加BIAS超买超卖分析
+        st.markdown("---")
+        st.subheader("📊 BIAS超买超卖分析")
+        
+        try:
+            # 计算BIAS指标
+            bias_data = []
+            
+            for symbol in selected_etfs:
+                df = fetch_etf_data(symbol)
+                if not df.empty:
+                    # 筛选近一年数据
+                    df_filtered = df[(df.index >= start_date) & (df.index <= end_date)]
+                    if not df_filtered.empty:
+                        # 计算不同周期的BIAS
+                        bias_6 = ((df_filtered['Close'] - df_filtered['Close'].rolling(6).mean()) / df_filtered['Close'].rolling(6).mean() * 100).iloc[-1]
+                        bias_12 = ((df_filtered['Close'] - df_filtered['Close'].rolling(12).mean()) / df_filtered['Close'].rolling(12).mean() * 100).iloc[-1]
+                        bias_24 = ((df_filtered['Close'] - df_filtered['Close'].rolling(24).mean()) / df_filtered['Close'].rolling(24).mean() * 100).iloc[-1]
+                        
+                        # 获取当前价格和均线
+                        current_price = df_filtered['Close'].iloc[-1]
+                        ma_6 = df_filtered['Close'].rolling(6).mean().iloc[-1]
+                        ma_12 = df_filtered['Close'].rolling(12).mean().iloc[-1]
+                        ma_24 = df_filtered['Close'].rolling(24).mean().iloc[-1]
+                        
+                        # 判断超买超卖状态
+                        def get_bias_status(bias_6, bias_12, bias_24):
+                            # 使用统计方法计算动态阈值
+                            # 基于历史BIAS数据的标准差来设置阈值
+                            def calculate_dynamic_threshold(bias_values, multiplier=2.0):
+                                """计算动态阈值：均值 ± (倍数 × 标准差)"""
+                                if len(bias_values) > 0:
+                                    mean_bias = np.mean(bias_values)
+                                    std_bias = np.std(bias_values)
+                                    return mean_bias + multiplier * std_bias, mean_bias - multiplier * std_bias
+                                return 5, -5  # 默认值
+                            
+                            # 获取历史BIAS数据用于计算动态阈值
+                            try:
+                                # 计算过去30个交易日的BIAS值
+                                bias_6_history = ((df_filtered['Close'] - df_filtered['Close'].rolling(6).mean()) / df_filtered['Close'].rolling(6).mean() * 100).dropna().tail(30)
+                                bias_12_history = ((df_filtered['Close'] - df_filtered['Close'].rolling(12).mean()) / df_filtered['Close'].rolling(12).mean() * 100).dropna().tail(30)
+                                bias_24_history = ((df_filtered['Close'] - df_filtered['Close'].rolling(24).mean()) / df_filtered['Close'].rolling(24).mean() * 100).dropna().tail(30)
+                                
+                                # 计算动态阈值
+                                upper_6, lower_6 = calculate_dynamic_threshold(bias_6_history, 2.0)
+                                upper_12, lower_12 = calculate_dynamic_threshold(bias_12_history, 2.0)
+                                upper_24, lower_24 = calculate_dynamic_threshold(bias_24_history, 2.0)
+                                
+                                # 使用动态阈值判断
+                                if bias_6 > upper_6 and bias_12 > upper_12 and bias_24 > upper_24:
+                                    return f"🔴 超买 (6日:{bias_6:.1f}%>{upper_6:.1f}%)", "danger"
+                                elif bias_6 < lower_6 and bias_12 < lower_12 and bias_24 < lower_24:
+                                    return f"🟢 超卖 (6日:{bias_6:.1f}%<{lower_6:.1f}%)", "success"
+                                elif bias_6 > upper_6 * 0.8 or bias_12 > upper_12 * 0.8:
+                                    return f"🟡 偏超买 (6日:{bias_6:.1f}%)", "warning"
+                                elif bias_6 < lower_6 * 0.8 or bias_12 < lower_12 * 0.8:
+                                    return f"🟠 偏超卖 (6日:{bias_6:.1f}%)", "warning"
+                                else:
+                                    return f"⚪ 正常 (6日:{bias_6:.1f}%)", "info"
+                                    
+                            except:
+                                # 如果动态计算失败，使用传统固定阈值
+                                if bias_6 > 5 and bias_12 > 3 and bias_24 > 2:
+                                    return "🔴 超买", "danger"
+                                elif bias_6 < -5 and bias_12 < -3 and bias_24 < -2:
+                                    return "🟢 超卖", "success"
+                                elif bias_6 > 3 or bias_12 > 2:
+                                    return "🟡 偏超买", "warning"
+                                elif bias_6 < -3 or bias_12 < -2:
+                                    return "🟠 偏超卖", "warning"
+                                else:
+                                    return "⚪ 正常", "info"
+                        
+                        bias_status, status_color = get_bias_status(bias_6, bias_12, bias_24)
+                        
+                        bias_data.append({
+                            'ETF代码': symbol,
+                            'ETF名称': all_etfs.get(symbol, symbol),
+                            '当前价格': current_price,
+                            '6日均线': ma_6,
+                            '12日均线': ma_12,
+                            '24日均线': ma_24,
+                            'BIAS(6)': bias_6,
+                            'BIAS(12)': bias_12,
+                            'BIAS(24)': bias_24,
+                            '状态': bias_status
+                        })
+            
+            if bias_data:
+                # 创建BIAS分析表格
+                bias_df = pd.DataFrame(bias_data)
+                
+                # 格式化数值，保留2位小数
+                bias_df['当前价格'] = bias_df['当前价格'].round(2)
+                bias_df['6日均线'] = bias_df['6日均线'].round(2)
+                bias_df['12日均线'] = bias_df['12日均线'].round(2)
+                bias_df['24日均线'] = bias_df['24日均线'].round(2)
+                bias_df['BIAS(6)'] = bias_df['BIAS(6)'].round(2)
+                bias_df['BIAS(12)'] = bias_df['BIAS(12)'].round(2)
+                bias_df['BIAS(24)'] = bias_df['BIAS(24)'].round(2)
+                
+                # 添加百分比符号
+                bias_df['BIAS(6)'] = bias_df['BIAS(6)'].astype(str) + '%'
+                bias_df['BIAS(12)'] = bias_df['BIAS(12)'].astype(str) + '%'
+                bias_df['BIAS(24)'] = bias_df['BIAS(24)'].astype(str) + '%'
+                
+                st.dataframe(bias_df, use_container_width=True)
+                
+                # 添加BIAS分析说明
+                st.info("""
+                **BIAS超买超卖分析说明：**
+                - **BIAS指标**：衡量价格偏离均线的程度，正值表示价格高于均线，负值表示价格低于均线
+                - **动态阈值**：基于过去30个交易日的BIAS数据，使用均值±2倍标准差计算超买超卖阈值
+                - **超买状态**：当前BIAS值超过历史统计上限，可能面临回调风险
+                - **超卖状态**：当前BIAS值低于历史统计下限，可能存在反弹机会
+                - **统计方法**：阈值 = 历史均值 ± (2.0 × 历史标准差)
+                - **备用方案**：如果动态计算失败，使用传统固定阈值(±5%, ±3%, ±2%)
+                """)
+                
+                # 投资建议
+                st.markdown("**💡 BIAS投资建议**")
+                
+                # 找出超买和超卖的ETF
+                overbought_etfs = [row for row in bias_data if "超买" in row['状态']]
+                oversold_etfs = [row for row in bias_data if "超卖" in row['状态']]
+                
+                if overbought_etfs:
+                    overbought_text = ", ".join([f"{row['ETF代码']}({row['ETF名称']})" for row in overbought_etfs])
+                    st.warning(f"**超买ETF**：{overbought_text} - 注意回调风险")
+                
+                if oversold_etfs:
+                    oversold_text = ", ".join([f"{row['ETF代码']}({row['ETF名称']})" for row in oversold_etfs])
+                    st.success(f"**超卖ETF**：{oversold_text} - 关注反弹机会")
+                
+                if not overbought_etfs and not oversold_etfs:
+                    st.info("**当前状态**：所有ETF都处于正常区间，无明显超买超卖信号")
+                
+            else:
+                st.warning("无法获取BIAS分析数据")
+                
+        except Exception as e:
+            st.error(f"BIAS分析失败: {e}")
+        
+        # 添加趋势分析说明
+        st.info("""
+        **趋势图说明：**
+        - 横坐标：时间（近一年）
+        - 纵坐标：累计涨跌幅（以年初为基准）
+        - 零线：灰色虚线表示无涨跌的基准线
+        - 彩色实线：各ETF的走势，便于对比分析
+        - 🏆 等权配置：红色虚线表示等权重配置的收益表现
+        - 趋势向上表示资产表现良好，趋势向下表示资产表现不佳
+        """)
+        
     else:
         st.warning("暂无符合条件的ETF，建议空仓")
-    
-    st.markdown("---")
-    st.subheader("📊 所有ETF动量排名")
-    all_etfs_data = []
-    for symbol, name, close, ma, momentum, above_ma in all_etfs_result:
-        all_etfs_data.append({
-            'ETF代码': symbol,
-            'ETF名称': name,
-            '当前价格(元)': f"{close:.2f}",
-            f'{ma_period}日均线': f"{ma:.2f}",
-            '价格-均线': f"{close - ma:.2f}",
-            f'{momentum_period}日动量': f"{momentum*100:.2f}%",
-            '站上均线': '✅' if above_ma else '❌',
-            '推荐': '⭐' if (symbol, name, close, ma, momentum) in selected_etfs_result else ''
-        })
-    all_etfs_df = pd.DataFrame(all_etfs_data)
-    all_etfs_df = all_etfs_df.sort_values(f'{momentum_period}日动量', ascending=False, key=lambda x: pd.to_numeric(x.str.rstrip('%'), errors='coerce'))
-    st.dataframe(all_etfs_df.style.background_gradient(cmap="Blues"), use_container_width=True)
-    st.info("动量排名仅供参考，建议结合自身风险偏好决策。")
     
     st.markdown("---")
     st.markdown("""

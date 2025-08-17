@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 from datetime import datetime
 from data import get_etf_list, fetch_etf_data_with_retry
 from utils import get_etf_options_with_favorites, get_favorite_etfs
@@ -179,29 +181,41 @@ if run_btn:
                         }
             
             # 绘制趋势图
-            fig_trend, ax_trend = plt.subplots(figsize=(14, 6))
+            fig_trend = go.Figure()
             
             # 绘制标的累计收益
-            ax_trend.plot(buyhold_cum_returns.index, buyhold_cum_returns.values, 
-                         linewidth=2, color='black', label='标的累计收益', alpha=0.8)
+            fig_trend.add_trace(go.Scatter(x=buyhold_cum_returns.index, y=buyhold_cum_returns.values, 
+                                           mode='lines', line=dict(width=2, color='black'), 
+                                           name='标的累计收益', opacity=0.8))
             
             # 绘制每周累计收益
-            colors = ['red', 'blue', 'green', 'orange']
+            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
+            week_names = ['第1周', '第2周', '第3周', '第4周']
+            
             for week in range(1, 5):
                 if week in weekly_cum_returns:
-                    ax_trend.plot(weekly_cum_returns[week]['dates'], 
-                                weekly_cum_returns[week]['returns'],
-                                linewidth=1.5, color=colors[week-1], 
-                                label=f'第{week}周累计收益', alpha=0.7)
+                    fig_trend.add_trace(go.Scatter(x=weekly_cum_returns[week]['dates'], 
+                                                   y=weekly_cum_returns[week]['returns'],
+                                                   mode='lines', line=dict(width=1.5, color=colors[week-1]), 
+                                                   name=f'{week_names[week-1]}累计收益', opacity=0.7))
             
-            ax_trend.set_xlabel('日期')
-            ax_trend.set_ylabel('累计收益率 (%)')
-            ax_trend.set_title(f'{symbol} - {name} 标的vs各周累计收益趋势')
-            ax_trend.legend()
-            ax_trend.grid(True, alpha=0.3)
-            ax_trend.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
-            plt.xticks(rotation=45)
-            st.pyplot(fig_trend)
+            # 添加零线
+            fig_trend.add_hline(y=0, line_width=1, line_dash="dash", line_color="gray", opacity=0.5)
+            
+            fig_trend.update_layout(
+                title=f'{symbol} - {name} 标的vs各周累计收益趋势',
+                xaxis_title='日期',
+                yaxis_title='累计收益率 (%)',
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                height=500,
+                hovermode='x unified'
+            )
+            
+            # 设置x轴日期格式
+            fig_trend.update_xaxes(tickangle=45)
+            
+            st.plotly_chart(fig_trend, use_container_width=True)
             
             # 可视化
             col1, col2 = st.columns(2)
@@ -212,35 +226,70 @@ if run_btn:
                 up_ratios = [weekly_stats[w]['上涨占比'] for w in weeks]
                 down_ratios = [weekly_stats[w]['下跌占比'] for w in weeks]
                 
-                fig1, ax1 = plt.subplots(figsize=(8, 4))
-                x = np.arange(len(weeks))
-                width = 0.35
+                # 创建分组柱状图
+                fig1 = go.Figure()
                 
-                ax1.bar(x - width/2, up_ratios, width, label='上涨占比', color='green', alpha=0.7)
-                ax1.bar(x + width/2, down_ratios, width, label='下跌占比', color='red', alpha=0.7)
+                # 添加上涨占比
+                fig1.add_trace(go.Bar(
+                    x=[f'第{w}周' for w in weeks],
+                    y=up_ratios,
+                    name='上涨占比',
+                    marker_color='green',
+                    opacity=0.7
+                ))
                 
-                ax1.set_xlabel('周次')
-                ax1.set_ylabel('占比')
-                ax1.set_title(f'{symbol} - {name} 各周涨跌占比')
-                ax1.set_xticks(x)
-                ax1.set_xticklabels([f'第{w}周' for w in weeks])
-                ax1.legend()
-                ax1.grid(True, alpha=0.3)
-                st.pyplot(fig1)
+                # 添加下跌占比
+                fig1.add_trace(go.Bar(
+                    x=[f'第{w}周' for w in weeks],
+                    y=down_ratios,
+                    name='下跌占比',
+                    marker_color='red',
+                    opacity=0.7
+                ))
+                
+                fig1.update_layout(
+                    title=f'{symbol} - {name} 各周涨跌占比',
+                    xaxis_title='周次',
+                    yaxis_title='占比',
+                    barmode='group',
+                    showlegend=True,
+                    height=400,
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig1, use_container_width=True)
             
             with col2:
                 # 平均收益柱状图
                 avg_returns = [weekly_stats[w]['平均收益'] for w in weeks]
                 
-                fig2, ax2 = plt.subplots(figsize=(8, 4))
-                bars = ax2.bar([f'第{w}周' for w in weeks], avg_returns, 
-                              color=['green' if r > 0 else 'red' for r in avg_returns], alpha=0.7)
-                ax2.set_xlabel('周次')
-                ax2.set_ylabel('平均收益率')
-                ax2.set_title(f'{symbol} - {name} 各周平均收益')
-                ax2.axhline(y=0, color='black', linestyle='--', alpha=0.5)
-                ax2.grid(True, alpha=0.3)
-                st.pyplot(fig2)
+                # 创建柱状图
+                fig2 = go.Figure()
+                
+                # 根据收益值选择颜色
+                colors = ['green' if r > 0 else 'red' for r in avg_returns]
+                
+                fig2.add_trace(go.Bar(
+                    x=[f'第{w}周' for w in weeks],
+                    y=avg_returns,
+                    name='平均收益',
+                    marker_color=colors,
+                    opacity=0.7
+                ))
+                
+                # 添加零线
+                fig2.add_hline(y=0, line_width=1, line_dash="dash", line_color="black", opacity=0.5, annotation_text="零线")
+                
+                fig2.update_layout(
+                    title=f'{symbol} - {name} 各周平均收益',
+                    xaxis_title='周次',
+                    yaxis_title='平均收益率',
+                    showlegend=True,
+                    height=400,
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig2, use_container_width=True)
         else:
             st.info(f"{symbol} - {name} 暂无有效数据")
         
@@ -308,30 +357,31 @@ if run_btn:
                 weeks = list(summary_stats.keys())
                 up_ratios = [summary_stats[w]['上涨占比'] for w in weeks]
                 
-                fig3, ax3 = plt.subplots(figsize=(8, 4))
-                bars = ax3.bar([f'第{w}周' for w in weeks], up_ratios, 
-                              color=['green' if r > 0.5 else 'orange' for r in up_ratios], alpha=0.7)
-                ax3.set_xlabel('周次')
-                ax3.set_ylabel('上涨占比')
-                ax3.set_title('各周上涨占比汇总')
-                ax3.axhline(y=0.5, color='red', linestyle='--', alpha=0.5, label='50%基准线')
-                ax3.legend()
-                ax3.grid(True, alpha=0.3)
-                st.pyplot(fig3)
+                fig3 = px.bar(x=weeks, y=up_ratios, color=up_ratios, 
+                              labels={'x':'周次', 'y':'上涨占比'}, 
+                              title='各周上涨占比汇总', 
+                              color_continuous_scale=['green', 'orange'])
+                fig3.update_layout(showlegend=True, legend_orientation="h", 
+                                   legend=dict(yanchor="bottom", y=1.02, xanchor="right", x=1), 
+                                   yaxis_title="上涨占比")
+                fig3.add_hline(y=0.5, line_dash="dash", line_color="red", 
+                               annotation_text="50%基准线", annotation_position="bottom right")
+                st.plotly_chart(fig3, use_container_width=True)
             
             with col2:
                 # 平均收益对比
                 avg_returns = [summary_stats[w]['平均收益'] for w in weeks]
                 
-                fig4, ax4 = plt.subplots(figsize=(8, 4))
-                bars = ax4.bar([f'第{w}周' for w in weeks], avg_returns, 
-                              color=['green' if r > 0 else 'red' for r in avg_returns], alpha=0.7)
-                ax4.set_xlabel('周次')
-                ax4.set_ylabel('平均收益率')
-                ax4.set_title('各周平均收益汇总')
-                ax4.axhline(y=0, color='black', linestyle='--', alpha=0.5)
-                ax4.grid(True, alpha=0.3)
-                st.pyplot(fig4)
+                fig4 = px.bar(x=weeks, y=avg_returns, color=avg_returns, 
+                              labels={'x':'周次', 'y':'平均收益率'}, 
+                              title='各周平均收益汇总', 
+                              color_continuous_scale=['green', 'red'])
+                fig4.update_layout(showlegend=True, legend_orientation="h", 
+                                   legend=dict(yanchor="bottom", y=1.02, xanchor="right", x=1), 
+                                   yaxis_title="平均收益率")
+                fig4.add_hline(y=0, line_dash="dash", line_color="black", 
+                               annotation_text="0%基准线", annotation_position="bottom right")
+                st.plotly_chart(fig4, use_container_width=True)
             
             # 找出最容易涨和最容易跌的周
             best_week = max(summary_stats.items(), key=lambda x: x[1]['上涨占比'])

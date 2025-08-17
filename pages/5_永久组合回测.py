@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.express as px
 import numpy as np
 from datetime import datetime, timedelta
 from data import get_etf_list, load_metadata
@@ -251,18 +252,18 @@ def calculate_permanent_portfolio():
             
             # 净值曲线
             st.subheader("净值曲线")
-            fig, ax = plt.subplots(figsize=(14, 8))
+            fig = go.Figure()
             
             # 绘制永久组合净值曲线
-            ax.plot(st.session_state.permanent_portfolio_value.index, 
-                   st.session_state.permanent_portfolio_value / st.session_state.permanent_initial_investment,
-                   label='永久组合(不再平衡)', linewidth=3, color='black')
+            fig.add_trace(go.Scatter(x=st.session_state.permanent_portfolio_value.index, 
+                   y=st.session_state.permanent_portfolio_value / st.session_state.permanent_initial_investment,
+                   mode='lines', line=dict(width=3, color='black'), name='永久组合(不再平衡)'))
             
             # 如果启用了再平衡，绘制再平衡的净值曲线
             if st.session_state.get('permanent_rebalance_annually', False) and st.session_state.get('permanent_portfolio_value_rebalance') is not None:
-                ax.plot(st.session_state.permanent_portfolio_value_rebalance.index, 
-                       st.session_state.permanent_portfolio_value_rebalance / st.session_state.permanent_initial_investment,
-                       label='永久组合(年度再平衡)', linewidth=3, color='red', linestyle='--')
+                fig.add_trace(go.Scatter(x=st.session_state.permanent_portfolio_value_rebalance.index, 
+                       y=st.session_state.permanent_portfolio_value_rebalance / st.session_state.permanent_initial_investment,
+                       mode='lines', line=dict(width=3, color='red', dash='dash'), name='永久组合(年度再平衡)'))
             
             # 绘制各ETF净值曲线
             colors = ['red', 'blue', 'orange', 'green']
@@ -271,25 +272,26 @@ def calculate_permanent_portfolio():
                 # 优先用etf_names中的名称，否则用代码
                 etf_name = st.session_state.permanent_etf_names.get(symbol, symbol)
                 color = colors[i] if i < len(colors) else 'gray'
-                ax.plot(st.session_state.permanent_etf_data[col].index,
-                       st.session_state.permanent_etf_data[col] / st.session_state.permanent_etf_data[col].iloc[0],
-                       label=f"{etf_name}", 
-                       alpha=0.7, linewidth=1.5, color=color)
+                fig.add_trace(go.Scatter(x=st.session_state.permanent_etf_data[col].index,
+                       y=st.session_state.permanent_etf_data[col] / st.session_state.permanent_etf_data[col].iloc[0],
+                       mode='lines', line=dict(width=1.5, color=color), name=f"{etf_name}", opacity=0.7))
             
             # 绘制基准
             if st.session_state.permanent_benchmark_value is not None:
-                ax.plot(st.session_state.permanent_benchmark_value.index, 
-                       st.session_state.permanent_benchmark_value / st.session_state.permanent_initial_investment,
-                       label='等权重基准', linestyle=':', linewidth=2, color='gray')
+                fig.add_trace(go.Scatter(x=st.session_state.permanent_benchmark_value.index, 
+                       y=st.session_state.permanent_benchmark_value / st.session_state.permanent_initial_investment,
+                       mode='lines', line=dict(width=2, color='gray', dash='dot'), name='等权重基准'))
             
-            ax.set_title("永久组合与各资产净值走势（归一化）", fontsize=16, fontweight='bold')
-            ax.set_xlabel("日期", fontsize=14)
-            ax.set_ylabel("净值倍数", fontsize=14)
-            ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=12)
-            ax.grid(True, alpha=0.3)
-            ax.tick_params(axis='both', which='major', labelsize=12)
-            plt.tight_layout()
-            st.pyplot(fig, use_container_width=True)
+            fig.update_layout(
+                title="永久组合与各资产净值走势（归一化）",
+                xaxis_title="日期",
+                yaxis_title="净值倍数",
+                legend=dict(x=1.02, y=1),
+                hovermode='x unified',
+                showlegend=True,
+                template='plotly_white'
+            )
+            st.plotly_chart(fig, use_container_width=True)
             
             # 年度收益分析
             st.subheader("年度收益分析")
@@ -301,35 +303,35 @@ def calculate_permanent_portfolio():
                 
                 with col1:
                     # 年度收益柱状图
-                    fig, ax = plt.subplots(figsize=(12, 6))
+                    fig = go.Figure()
                     years = annual_returns.index
                     returns = annual_returns.values
                     
                     # 设置颜色 - 涨用红色，跌用绿色
                     colors = ['red' if r >= 0 else 'green' for r in returns]
                     
-                    bars = ax.bar(years, returns, color=colors, alpha=0.7, edgecolor='black', linewidth=1)
+                    fig.add_trace(go.Bar(x=years, y=returns, marker_color=colors, opacity=0.7, name="年度收益率"))
                     
                     # 添加数值标签
-                    for bar, return_val in zip(bars, returns):
-                        height = bar.get_height()
-                        ax.text(bar.get_x() + bar.get_width()/2., height + (0.5 if height >= 0 else -1.5),
-                               f'{return_val:.1f}%', ha='center', va='bottom' if height >= 0 else 'top',
-                               fontweight='bold', fontsize=10)
+                    for i, (year, return_val) in enumerate(zip(years, returns)):
+                        fig.add_annotation(
+                            x=year,
+                            y=return_val,
+                            text=f'{return_val:.1f}%',
+                            showarrow=False,
+                            yshift=10,
+                            font=dict(size=10, color='black', weight='bold')
+                        )
                     
-                    ax.set_title("永久组合年度收益率", fontsize=14, fontweight='bold')
-                    ax.set_xlabel("年份", fontsize=12)
-                    ax.set_ylabel("收益率 (%)", fontsize=12)
-                    ax.grid(True, alpha=0.3, axis='y')
-                    ax.axhline(y=0, color='black', linestyle='-', alpha=0.5)
-                    
-                    # 设置y轴范围，确保0线可见
-                    max_return = max(returns) if len(returns) > 0 else 10
-                    min_return = min(returns) if len(returns) > 0 else -10
-                    ax.set_ylim(min_return - 2, max_return + 3)
-                    
-                    plt.tight_layout()
-                    st.pyplot(fig, use_container_width=True)
+                    fig.update_layout(
+                        title="永久组合年度收益率",
+                        xaxis_title="年份",
+                        yaxis_title="收益率 (%)",
+                        hovermode='x unified',
+                        showlegend=True,
+                        template='plotly_white'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
                 
                 with col2:
                     # 年度收益统计
@@ -352,30 +354,6 @@ def calculate_permanent_portfolio():
                     # 胜率
                     win_rate = (positive_years / total_years * 100) if total_years > 0 else 0
                     st.metric("胜率", f"{win_rate:.1f}%")
-                
-                # 年度收益详细表格
-                st.write("**年度收益详情**")
-                annual_df = pd.DataFrame({
-                    '年份': annual_returns.index,
-                    '收益率 (%)': annual_returns.values.round(2)
-                })
-                
-                # 添加颜色标识和进度条
-                def style_annual_returns(df):
-                    # 创建样式 - 涨用红色，跌用绿色
-                    def color_returns(val):
-                        if pd.isna(val):
-                            return ''
-                        if val > 0:
-                            return 'background-color: rgba(255, 0, 0, 0.3); color: darkred; font-weight: bold'
-                        elif val < 0:
-                            return 'background-color: rgba(0, 255, 0, 0.3); color: darkgreen; font-weight: bold'
-                        else:
-                            return 'background-color: rgba(128, 128, 128, 0.3); color: gray; font-weight: bold'
-                    
-                    return df.style.applymap(color_returns, subset=['收益率 (%)'])
-                
-                st.dataframe(style_annual_returns(annual_df.set_index('年份')), use_container_width=True)
                 
                 # 年度收益进度条可视化
                 st.write("**年度收益进度条**")
@@ -409,13 +387,31 @@ def calculate_permanent_portfolio():
             with col1:
                 # 相关性矩阵
                 st.write("**资产相关性矩阵**")
-                corr_fig, corr_ax = plt.subplots(figsize=(8, 6))
-                import seaborn as sns
-                sns.heatmap(st.session_state.permanent_returns.corr(), 
-                           annot=True, cmap='coolwarm', center=0, ax=corr_ax, fmt='.2f')
-                plt.title("永久组合资产相关性", fontsize=12, fontweight='bold')
-                plt.tight_layout()
-                st.pyplot(corr_fig, use_container_width=True)
+                corr_matrix = st.session_state.permanent_returns.corr()
+                
+                # 创建资产名称映射
+                asset_names = {}
+                for col in corr_matrix.columns:
+                    symbol = col.split('_')[0]
+                    asset_names[col] = st.session_state.permanent_etf_names.get(symbol, symbol)
+                
+                # 重命名列和索引
+                corr_matrix_renamed = corr_matrix.rename(columns=asset_names, index=asset_names)
+                
+                fig = px.imshow(corr_matrix_renamed,
+                           color_continuous_scale='rdbu',
+                           title="永久组合资产相关性",
+                           labels=dict(x="资产", y="资产", color="相关系数"),
+                           text_auto=True,
+                           template='plotly_white')
+                
+                fig.update_layout(
+                    height=400,
+                    xaxis=dict(tickangle=45),
+                    yaxis=dict(tickangle=0)
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
             
             with col2:
                 # 收益率统计

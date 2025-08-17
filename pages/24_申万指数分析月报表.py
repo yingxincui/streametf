@@ -12,35 +12,37 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="申万指数分析月报表", page_icon="📊", layout="wide")
 st.title("📊 申万指数分析月报表")
 
-st.markdown("""
-> 基于申万宏源研究的指数分析月报表，深入分析市场表征、一级行业、二级行业和风格指数的表现。
-> 提供多维度数据可视化和统计分析，帮助投资者了解市场结构和行业轮动规律。
+# 使用expander折叠说明部分
+with st.expander("📖 功能说明与使用指南", expanded=False):
+    st.markdown("""
+    > 基于申万宏源研究的指数分析月报表，深入分析市场表征、一级行业、二级行业和风格指数的表现。
+    > 提供多维度数据可视化和统计分析，帮助投资者了解市场结构和行业轮动规律。
 
-**🎯 核心功能：**
-- **多维度分析**：市场表征、一级行业、二级行业、风格指数
-- **月度数据**：获取申万指数月度分析报表
-- **可视化图表**：涨跌幅分布、估值分析、成交分析等
-- **对比分析**：不同指数类别间的表现对比
-- **数据导出**：支持CSV和Excel格式下载
+    **🎯 核心功能：**
+    - **多维度分析**：市场表征、一级行业、二级行业、风格指数
+    - **月度数据**：获取申万指数月度分析报表
+    - **可视化图表**：涨跌幅分布、估值分析、成交分析等
+    - **对比分析**：不同指数类别间的表现对比
+    - **数据导出**：支持CSV和Excel格式下载
 
-**📊 分析维度：**
-- **涨跌幅分析**：指数涨跌分布和排名
-- **估值分析**：市盈率、市净率、股息率分析
-- **成交分析**：成交量、换手率、成交额占比
-- **市值分析**：流通市值和平均流通市值
-- **行业轮动**：不同行业指数的相对表现
+    **📊 分析维度：**
+    - **涨跌幅分析**：指数涨跌分布和排名
+    - **估值分析**：市盈率、市净率、股息率分析
+    - **成交分析**：成交量、换手率、成交额占比
+    - **市值分析**：流通市值和平均流通市值
+    - **行业轮动**：不同行业指数的相对表现
 
-**🎨 颜色规则：**
-- **涨（正值）**：红色 🔴
-- **跌（负值）**：绿色 🟢
-（符合中国股市习惯）
+    **🎨 颜色规则：**
+    - **涨（正值）**：红色 🔴
+    - **跌（负值）**：绿色 🟢
+    （符合中国股市习惯）
 
-**📈 指数类别说明：**
-- **市场表征**：代表整体市场走势的指数
-- **一级行业**：申万一级行业分类指数
-- **二级行业**：申万二级行业分类指数
-- **风格指数**：不同投资风格的指数
-""")
+    **📈 指数类别说明：**
+    - **市场表征**：代表整体市场走势的指数
+    - **一级行业**：申万一级行业分类指数
+    - **二级行业**：申万二级行业分类指数
+    - **风格指数**：不同投资风格的指数
+    """)
 
 # 获取可用的月度日期
 @st.cache_data(ttl=3600)  # 缓存1小时
@@ -155,40 +157,58 @@ if run_btn:
     st.subheader("📋 数据概览")
     st.info(f"**分析类别：** {selected_symbol} | **分析日期：** {selected_date_friendly} | **数据条数：** {len(data)}")
     
-    # 显示原始数据表格
-    st.subheader("📋 原始数据表格")
+    # 可视化分析 - 涨跌幅图放在最前面
+    st.subheader("📈 涨跌幅分析")
     
-    # 格式化表格显示
-    def color_returns(val):
-        """根据涨跌幅设置颜色"""
-        if pd.isna(val):
-            return ''
-        if val > 0:
-            return 'background-color: #f8d7da; color: #721c24'  # 红色背景（涨）
-        elif val < 0:
-            return 'background-color: #d4edda; color: #155724'  # 绿色背景（跌）
-        else:
-            return ''
-    
-    # 应用样式
-    styled_df = data.style.apply(
-        lambda x: [color_returns(val) if col == '涨跌幅' else '' for col, val in x.items()], 
-        subset=['涨跌幅']
-    ).format({
-        '收盘指数': '{:.2f}',
-        '成交量': '{:.2f}',
-        '涨跌幅': '{:.2f}%',
-        '换手率': '{:.2f}%',
-        '市盈率': '{:.2f}',
-        '市净率': '{:.2f}',
-        '均价': '{:.2f}',
-        '成交额占比': '{:.2f}%',
-        '流通市值': '{:.2f}',
-        '平均流通市值': '{:.2f}',
-        '股息率': '{:.2f}%'
-    })
-    
-    st.dataframe(styled_df, use_container_width=True)
+    if not data.empty:
+        # 涨跌幅全排名（全宽显示）
+        if '涨跌幅' in data.columns:
+            # 按涨跌幅排序（从高到低）
+            sorted_data = data.sort_values('涨跌幅', ascending=False)[['指数名称', '涨跌幅']]
+            
+            # 创建全排名图
+            fig_ranking = go.Figure()
+            
+            # 根据涨跌设置渐变颜色
+            colors = []
+            for x in sorted_data['涨跌幅']:
+                if pd.isna(x) or x == 0:
+                    # 处理NaN或0值，使用灰色
+                    colors.append('#808080')
+                elif x > 0:
+                    # 红色渐变：从浅红到深红
+                    intensity = min(abs(x) / 20, 1.0)  # 根据涨跌幅强度调整颜色
+                    intensity = max(0.3, intensity)  # 确保最小值
+                    colors.append(f'rgba(220, 53, 69, {intensity})')
+                else:
+                    # 绿色渐变：从浅绿到深绿
+                    intensity = min(abs(x) / 20, 1.0)  # 根据涨跌幅强度调整颜色
+                    intensity = max(0.3, intensity)  # 确保最小值
+                    colors.append(f'rgba(40, 167, 69, {intensity})')
+            
+            fig_ranking.add_trace(go.Bar(
+                y=sorted_data['指数名称'],
+                x=sorted_data['涨跌幅'],
+                marker_color=colors,
+                orientation='h',
+                hovertemplate='<b>%{y}</b><br>涨跌幅: %{x:.2f}%<extra></extra>',
+                text=[f'{x:.2f}%' for x in sorted_data['涨跌幅']],
+                textposition='auto'
+            ))
+            
+            fig_ranking.add_vline(x=0, line_dash="dash", line_color="gray", opacity=0.5)
+            
+            fig_ranking.update_layout(
+                title=f'{selected_symbol}涨跌幅全排名',
+                yaxis_title='指数名称',
+                xaxis_title='涨跌幅 (%)',
+                height=max(600, len(sorted_data) * 20),  # 根据数据量动态调整高度
+                showlegend=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)'
+            )
+            
+            st.plotly_chart(fig_ranking, use_container_width=True)
     
     # 快速统计
     st.subheader("📊 快速统计")
@@ -241,84 +261,10 @@ if run_btn:
                 "标准差"
             )
     
-    # 可视化分析
-    st.subheader("📈 可视化分析")
+    # 其他可视化分析
+    st.subheader("📈 其他分析图表")
     
     if not data.empty:
-        # 第一行：涨跌幅分布和排名
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # 涨跌幅分布直方图
-            if '涨跌幅' in data.columns:
-                fig_hist = go.Figure()
-                
-                # 根据涨跌设置颜色
-                colors = ['#d62728' if x > 0 else '#2ca02c' for x in data['涨跌幅']]
-                
-                fig_hist.add_trace(go.Histogram(
-                    x=data['涨跌幅'],
-                    nbinsx=20,
-                    marker_color=colors,
-                    opacity=0.7,
-                    name='涨跌幅分布'
-                ))
-                
-                fig_hist.add_vline(x=0, line_dash="dash", line_color="gray", opacity=0.5)
-                
-                fig_hist.update_layout(
-                    title=f'{selected_symbol}涨跌幅分布',
-                    xaxis_title='涨跌幅 (%)',
-                    yaxis_title='频次',
-                    height=400,
-                    showlegend=False
-                )
-                
-                st.plotly_chart(fig_hist, use_container_width=True)
-        
-        with col2:
-            # 涨跌幅排名前10
-            if '涨跌幅' in data.columns:
-                # 按涨跌幅排序
-                top_data = data.nlargest(10, '涨跌幅')[['指数名称', '涨跌幅']]
-                bottom_data = data.nsmallest(10, '涨跌幅')[['指数名称', '涨跌幅']]
-                
-                # 创建对比图
-                fig_ranking = go.Figure()
-                
-                # 前10名（红色）
-                fig_ranking.add_trace(go.Bar(
-                    x=top_data['指数名称'],
-                    y=top_data['涨跌幅'],
-                    name='前10名',
-                    marker_color='#d62728',
-                    hovertemplate='<b>%{x}</b><br>涨跌幅: %{y:.2f}%<extra></extra>'
-                ))
-                
-                # 后10名（绿色）
-                fig_ranking.add_trace(go.Bar(
-                    x=bottom_data['指数名称'],
-                    y=bottom_data['涨跌幅'],
-                    name='后10名',
-                    marker_color='#2ca02c',
-                    hovertemplate='<b>%{x}</b><br>涨跌幅: %{y:.2f}%<extra></extra>'
-                ))
-                
-                fig_ranking.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
-                
-                fig_ranking.update_layout(
-                    title=f'{selected_symbol}涨跌幅排名对比',
-                    xaxis_title='指数名称',
-                    yaxis_title='涨跌幅 (%)',
-                    height=400,
-                    barmode='group'
-                )
-                
-                if len(top_data) > 6:
-                    fig_ranking.update_xaxes(tickangle=45)
-                
-                st.plotly_chart(fig_ranking, use_container_width=True)
-        
         # 第二行：估值分析
         st.subheader("💰 估值分析")
         
@@ -337,24 +283,22 @@ if run_btn:
                     colors = ['#d62728' if x > pe_data['市盈率'].median() else '#2ca02c' for x in pe_data['市盈率']]
                     
                     fig_pe.add_trace(go.Bar(
-                        x=pe_data['指数名称'],
-                        y=pe_data['市盈率'],
+                        y=pe_data['指数名称'],
+                        x=pe_data['市盈率'],
                         marker_color=colors,
-                        hovertemplate='<b>%{x}</b><br>市盈率: %{y:.2f}倍<extra></extra>',
+                        orientation='h',
+                        hovertemplate='<b>%{y}</b><br>市盈率: %{x:.2f}倍<extra></extra>',
                         text=[f'{x:.1f}' for x in pe_data['市盈率']],
                         textposition='auto'
                     ))
                     
                     fig_pe.update_layout(
                         title=f'{selected_symbol}市盈率排名前15',
-                        xaxis_title='指数名称',
-                        yaxis_title='市盈率 (倍)',
-                        height=400,
+                        yaxis_title='指数名称',
+                        xaxis_title='市盈率 (倍)',
+                        height=500,
                         showlegend=False
                     )
-                    
-                    if len(pe_data) > 6:
-                        fig_pe.update_xaxes(tickangle=45)
                     
                     st.plotly_chart(fig_pe, use_container_width=True)
                 else:
@@ -373,24 +317,22 @@ if run_btn:
                     colors = ['#d62728' if x > pb_data['市净率'].median() else '#2ca02c' for x in pb_data['市净率']]
                     
                     fig_pb.add_trace(go.Bar(
-                        x=pb_data['指数名称'],
-                        y=pb_data['市净率'],
+                        y=pb_data['指数名称'],
+                        x=pb_data['市净率'],
                         marker_color=colors,
-                        hovertemplate='<b>%{x}</b><br>市净率: %{y:.2f}倍<extra></extra>',
+                        orientation='h',
+                        hovertemplate='<b>%{y}</b><br>市净率: %{x:.2f}倍<extra></extra>',
                         text=[f'{x:.2f}' for x in pb_data['市净率']],
                         textposition='auto'
                     ))
                     
                     fig_pb.update_layout(
                         title=f'{selected_symbol}市净率排名前15',
-                        xaxis_title='指数名称',
-                        yaxis_title='市净率 (倍)',
-                        height=400,
+                        yaxis_title='指数名称',
+                        xaxis_title='市净率 (倍)',
+                        height=500,
                         showlegend=False
                     )
-                    
-                    if len(pb_data) > 6:
-                        fig_pb.update_xaxes(tickangle=45)
                     
                     st.plotly_chart(fig_pb, use_container_width=True)
                 else:
@@ -409,24 +351,22 @@ if run_btn:
                 fig_volume = go.Figure()
                 
                 fig_volume.add_trace(go.Bar(
-                    x=volume_data['指数名称'],
-                    y=volume_data['成交量'],
+                    y=volume_data['指数名称'],
+                    x=volume_data['成交量'],
                     marker_color='#1f77b4',
-                    hovertemplate='<b>%{x}</b><br>成交量: %{y:.2f}亿股<extra></extra>',
+                    orientation='h',
+                    hovertemplate='<b>%{y}</b><br>成交量: %{x:.2f}亿股<extra></extra>',
                     text=[f'{x:.1f}' for x in volume_data['成交量']],
                     textposition='auto'
                 ))
                 
                 fig_volume.update_layout(
                     title=f'{selected_symbol}成交量排名前15',
-                    xaxis_title='指数名称',
-                    yaxis_title='成交量 (亿股)',
-                    height=400,
+                    yaxis_title='指数名称',
+                    xaxis_title='成交量 (亿股)',
+                    height=500,
                     showlegend=False
                 )
-                
-                if len(volume_data) > 6:
-                    fig_volume.update_xaxes(tickangle=45)
                 
                 st.plotly_chart(fig_volume, use_container_width=True)
         
@@ -438,24 +378,22 @@ if run_btn:
                 fig_turnover = go.Figure()
                 
                 fig_turnover.add_trace(go.Bar(
-                    x=turnover_data['指数名称'],
-                    y=turnover_data['换手率'],
+                    y=turnover_data['指数名称'],
+                    x=turnover_data['换手率'],
                     marker_color='#ff7f0e',
-                    hovertemplate='<b>%{x}</b><br>换手率: %{y:.2f}%<extra></extra>',
+                    orientation='h',
+                    hovertemplate='<b>%{y}</b><br>换手率: %{x:.2f}%<extra></extra>',
                     text=[f'{x:.2f}' for x in turnover_data['换手率']],
                     textposition='auto'
                 ))
                 
                 fig_turnover.update_layout(
                     title=f'{selected_symbol}换手率排名前15',
-                    xaxis_title='指数名称',
-                    yaxis_title='换手率 (%)',
-                    height=400,
+                    yaxis_title='指数名称',
+                    xaxis_title='换手率 (%)',
+                    height=500,
                     showlegend=False
                 )
-                
-                if len(turnover_data) > 6:
-                    fig_turnover.update_xaxes(tickangle=45)
                 
                 st.plotly_chart(fig_turnover, use_container_width=True)
         
@@ -473,24 +411,22 @@ if run_btn:
                     fig_market_cap = go.Figure()
                     
                     fig_market_cap.add_trace(go.Bar(
-                        x=market_cap_data['指数名称'],
-                        y=market_cap_data['流通市值'],
+                        y=market_cap_data['指数名称'],
+                        x=market_cap_data['流通市值'],
                         marker_color='#9467bd',
-                        hovertemplate='<b>%{x}</b><br>流通市值: %{y:.2f}亿元<extra></extra>',
+                        orientation='h',
+                        hovertemplate='<b>%{y}</b><br>流通市值: %{x:.2f}亿元<extra></extra>',
                         text=[f'{x:.0f}' for x in market_cap_data['流通市值']],
                         textposition='auto'
                     ))
                     
                     fig_market_cap.update_layout(
                         title=f'{selected_symbol}流通市值排名前15',
-                        xaxis_title='指数名称',
-                        yaxis_title='流通市值 (亿元)',
-                        height=400,
+                        yaxis_title='指数名称',
+                        xaxis_title='流通市值 (亿元)',
+                        height=500,
                         showlegend=False
                     )
-                    
-                    if len(market_cap_data) > 6:
-                        fig_market_cap.update_xaxes(tickangle=45)
                     
                     st.plotly_chart(fig_market_cap, use_container_width=True)
                 else:
@@ -505,24 +441,22 @@ if run_btn:
                     fig_dividend = go.Figure()
                     
                     fig_dividend.add_trace(go.Bar(
-                        x=dividend_data['指数名称'],
-                        y=dividend_data['股息率'],
+                        y=dividend_data['指数名称'],
+                        x=dividend_data['股息率'],
                         marker_color='#2ca02c',
-                        hovertemplate='<b>%{x}</b><br>股息率: %{y:.2f}%<extra></extra>',
+                        orientation='h',
+                        hovertemplate='<b>%{y}</b><br>股息率: %{x:.2f}%<extra></extra>',
                         text=[f'{x:.2f}' for x in dividend_data['股息率']],
                         textposition='auto'
                     ))
                     
                     fig_dividend.update_layout(
                         title=f'{selected_symbol}股息率排名前15',
-                        xaxis_title='指数名称',
-                        yaxis_title='股息率 (%)',
-                        height=400,
+                        yaxis_title='指数名称',
+                        xaxis_title='股息率 (%)',
+                        height=500,
                         showlegend=False
                     )
-                    
-                    if len(dividend_data) > 6:
-                        fig_dividend.update_xaxes(tickangle=45)
                     
                     st.plotly_chart(fig_dividend, use_container_width=True)
                 else:
@@ -578,6 +512,41 @@ if run_btn:
             - **市值特征**：不同流通市值的指数可能具有不同的投资特征
             - **行业轮动**：通过月度数据观察行业轮动规律，把握投资时机
             """)
+        
+        # 显示原始数据表格（放在最后）
+        st.subheader("📋 原始数据表格")
+        
+        # 格式化表格显示
+        def color_returns(val):
+            """根据涨跌幅设置颜色"""
+            if pd.isna(val):
+                return ''
+            if val > 0:
+                return 'background-color: #f8d7da; color: #721c24'  # 红色背景（涨）
+            elif val < 0:
+                return 'background-color: #d4edda; color: #155724'  # 绿色背景（跌）
+            else:
+                return ''
+        
+        # 应用样式
+        styled_df = data.style.apply(
+            lambda x: [color_returns(val) if col == '涨跌幅' else '' for col, val in x.items()], 
+            subset=['涨跌幅']
+        ).format({
+            '收盘指数': '{:.2f}',
+            '成交量': '{:.2f}',
+            '涨跌幅': '{:.2f}%',
+            '换手率': '{:.2f}%',
+            '市盈率': '{:.2f}',
+            '市净率': '{:.2f}',
+            '均价': '{:.2f}',
+            '成交额占比': '{:.2f}%',
+            '流通市值': '{:.2f}',
+            '平均流通市值': '{:.2f}',
+            '股息率': '{:.2f}%'
+        })
+        
+        st.dataframe(styled_df, use_container_width=True)
         
         # 下载功能
         st.subheader("💾 下载分析结果")

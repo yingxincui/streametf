@@ -10,30 +10,376 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="宽基指数对比分析", page_icon="📊", layout="wide")
 st.title("📊 宽基指数对比分析")
 
-st.markdown("""
-> 分析主要宽基指数相对于上证指数的表现，帮助判断不同市场风格的表现强弱。
-> 提供多时间窗口的对比分析，识别市场轮动机会。
+# 使用expander折叠说明部分
+with st.expander("📖 功能说明与使用指南", expanded=False):
+    st.markdown("""
+    > 分析主要宽基指数相对于上证指数的表现，帮助判断不同市场风格的表现强弱。
+    > 提供多时间窗口的对比分析，识别市场轮动机会。
 
-**🎯 核心宽基指数：**
-- **上证指数 (000001)**：上海市场基准
-- **沪深300 (000300)**：大盘蓝筹代表
-- **中证500 (000500)**：中盘成长代表
-- **中证800 (000906)**：大中盘代表
-- **中证1000 (000852)**：小盘成长代表
-- **中证全指 (000985)**：全市场代表
-- **科创50 (000688)**：科技创新龙头
-- **中证2000 (932000)**：小微盘代表
-- **国证2000 (399303)**：深市小微盘代表
-- **创业板指 (399006)**：科技创新代表
-- **北证50 (899050)**：北交所龙头代表
+    **🎯 核心宽基指数：**
+    - **上证指数 (000001)**：上海市场基准
+    - **沪深300 (000300)**：大盘蓝筹代表
+    - **中证500 (000500)**：中盘成长代表
+    - **中证800 (000906)**：大中盘代表
+    - **中证1000 (000852)**：小盘成长代表
+    - **中证全指 (000985)**：全市场代表
+    - **科创50 (000688)**：科技创新龙头
+    - **中证2000 (932000)**：小微盘代表
+    - **国证2000 (399303)**：深市小微盘代表
+    - **创业板指 (399006)**：科技创新代表
+    - **北证50 (899050)**：北交所龙头代表
 
-**📈 分析维度：**
-- **20日收益**：短期市场表现
-- **40日收益**：中期市场表现
-- **年初至今**：年度市场表现
-- **最大回撤**：风险控制能力
-- **相对上证**：超额收益分析
-""")
+    **📈 分析维度：**
+    - **20日收益**：短期市场表现
+    - **40日收益**：中期市场表现
+    - **年初至今**：年度市场表现
+    - **最大回撤**：风险控制能力
+    - **相对上证**：超额收益分析
+    """)
+
+# 大盘强势判断
+st.subheader("🏆 大盘强势判断")
+
+# 获取上证指数数据用于均线分析
+@st.cache_data(ttl=3600)
+def get_shanghai_data():
+    try:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=200)  # 获取更多数据用于均线计算
+        
+        # 尝试获取上证指数数据
+        data = pd.DataFrame()
+        try:
+            data = ak.stock_zh_index_hist_csindex(
+                symbol="000001",
+                start_date=start_date.strftime('%Y%m%d'),
+                end_date=end_date.strftime('%Y%m%d')
+            )
+        except:
+            try:
+                data = ak.index_zh_a_hist(
+                    symbol="000001", 
+                    period="daily",
+                    start_date=start_date.strftime('%Y%m%d'),
+                    end_date=end_date.strftime('%Y%m%d')
+                )
+            except:
+                try:
+                    data = ak.stock_zh_index_hist_sina(
+                        symbol="000001",
+                        start_date=start_date.strftime('%Y-%m-%d'),
+                        end_date=end_date.strftime('%Y-%m-%d')
+                    )
+                except:
+                    return None
+        
+        if not data.empty:
+            # 统一列名
+            if '日期' in data.columns:
+                data = data.rename(columns={'日期': 'date'})
+            if '收盘' in data.columns:
+                data = data.rename(columns={'收盘': 'close'})
+            if '收盘价' in data.columns:
+                data = data.rename(columns={'收盘价': 'close'})
+            if 'close' in data.columns:
+                data = data.rename(columns={'close': 'close'})
+            
+            # 确保有必要的列
+            if 'date' in data.columns and 'close' in data.columns:
+                data['date'] = pd.to_datetime(data['date'])
+                data['close'] = pd.to_numeric(data['close'], errors='coerce')
+                data = data.dropna(subset=['close'])
+                data = data.sort_values('date')
+                return data
+        
+        return None
+    except Exception as e:
+        st.error(f"获取上证指数数据失败: {str(e)}")
+        return None
+
+# 计算均线
+def calculate_ma(data, period):
+    return data['close'].rolling(window=period).mean()
+
+# 判断大盘强势状态
+def analyze_market_strength(data):
+    if data is None or data.empty:
+        return None
+    
+    # 计算各期均线
+    ma5 = calculate_ma(data, 5)
+    ma10 = calculate_ma(data, 10)
+    ma20 = calculate_ma(data, 20)
+    ma60 = calculate_ma(data, 60)
+    ma120 = calculate_ma(data, 120)
+    
+    # 获取最新数据
+    latest = data.iloc[-1]
+    latest_close = latest['close']
+    
+    # 获取最新均线值
+    latest_ma5 = ma5.iloc[-1]
+    latest_ma10 = ma10.iloc[-1]
+    latest_ma20 = ma20.iloc[-1]
+    latest_ma60 = ma60.iloc[-1]
+    latest_ma120 = ma120.iloc[-1]
+    
+    # 计算均线排列
+    ma_alignment = {
+        'ma5': latest_ma5,
+        'ma10': latest_ma10,
+        'ma20': latest_ma20,
+        'ma60': latest_ma60,
+        'ma120': latest_ma120
+    }
+    
+    # 判断均线多头排列
+    is_bullish_alignment = (latest_ma5 > latest_ma10 > latest_ma20 > latest_ma60 > latest_ma120)
+    
+    # 判断价格位置
+    price_above_ma20 = latest_close > latest_ma20
+    price_above_ma60 = latest_close > latest_ma60
+    price_above_ma120 = latest_close > latest_ma120
+    
+    # 计算均线斜率（趋势强度）
+    ma20_slope = (ma20.iloc[-1] - ma20.iloc[-5]) / ma20.iloc[-5] * 100  # 5日斜率
+    ma60_slope = (ma60.iloc[-1] - ma60.iloc[-5]) / ma60.iloc[-5] * 100  # 5日斜率
+    
+    # 计算MACD指标（简化版）
+    ema12 = data['close'].ewm(span=12).mean()
+    ema26 = data['close'].ewm(span=26).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9).mean()
+    macd_histogram = macd - signal
+    
+    latest_macd = macd.iloc[-1]
+    latest_signal = signal.iloc[-1]
+    latest_histogram = macd_histogram.iloc[-1]
+    
+    # 判断MACD状态
+    macd_bullish = latest_macd > latest_signal and latest_histogram > 0
+    
+    # 综合判断大盘强势状态
+    strength_score = 0
+    strength_reasons = []
+    
+    # 均线排列得分
+    if is_bullish_alignment:
+        strength_score += 30
+        strength_reasons.append("✅ 均线多头排列")
+    else:
+        strength_reasons.append("❌ 均线空头排列")
+    
+    # 价格位置得分
+    if price_above_ma20:
+        strength_score += 20
+        strength_reasons.append("✅ 价格在20日均线之上")
+    else:
+        strength_reasons.append("❌ 价格跌破20日均线")
+    
+    if price_above_ma60:
+        strength_score += 20
+        strength_reasons.append("✅ 价格在60日均线之上")
+    else:
+        strength_reasons.append("❌ 价格跌破60日均线")
+    
+    if price_above_ma120:
+        strength_score += 15
+        strength_reasons.append("✅ 价格在120日均线之上")
+    else:
+        strength_reasons.append("❌ 价格跌破120日均线")
+    
+    # 趋势强度得分
+    if ma20_slope > 0:
+        strength_score += 10
+        strength_reasons.append(f"✅ 20日均线向上倾斜 ({ma20_slope:.2f}%)")
+    else:
+        strength_reasons.append(f"❌ 20日均线向下倾斜 ({ma20_slope:.2f}%)")
+    
+    if ma60_slope > 0:
+        strength_score += 5
+        strength_reasons.append(f"✅ 60日均线向上倾斜 ({ma60_slope:.2f}%)")
+    else:
+        strength_reasons.append(f"❌ 60日均线向下倾斜 ({ma60_slope:.2f}%)")
+    
+    # MACD得分
+    if macd_bullish:
+        strength_score += 10
+        strength_reasons.append("✅ MACD金叉向上")
+    else:
+        strength_reasons.append("❌ MACD死叉向下")
+    
+    # 判断强势等级
+    if strength_score >= 80:
+        strength_level = "🔥 强势"
+        strength_color = "success"
+    elif strength_score >= 60:
+        strength_level = "📈 偏强"
+        strength_color = "info"
+    elif strength_score >= 40:
+        strength_level = "⚖️ 中性"
+        strength_color = "warning"
+    elif strength_score >= 20:
+        strength_level = "📉 偏弱"
+        strength_color = "warning"
+    else:
+        strength_level = "💀 弱势"
+        strength_color = "error"
+    
+    return {
+        'strength_score': strength_score,
+        'strength_level': strength_level,
+        'strength_color': strength_color,
+        'strength_reasons': strength_reasons,
+        'latest_close': latest_close,
+        'ma_alignment': ma_alignment,
+        'ma20_slope': ma20_slope,
+        'ma60_slope': ma60_slope,
+        'macd_bullish': macd_bullish,
+        'data': data
+    }
+
+# 执行大盘强势分析
+shanghai_data = get_shanghai_data()
+if shanghai_data is not None:
+    market_analysis = analyze_market_strength(shanghai_data)
+    
+    if market_analysis:
+        # 显示强势状态
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(
+                "大盘强势评分",
+                market_analysis['strength_level'],
+                f"{market_analysis['strength_score']}/100"
+            )
+        
+        with col2:
+            st.metric(
+                "上证指数",
+                f"{market_analysis['latest_close']:.2f}",
+                f"MA20: {market_analysis['ma_alignment']['ma20']:.2f}"
+            )
+        
+        with col3:
+            st.metric(
+                "趋势强度",
+                f"MA20斜率: {market_analysis['ma20_slope']:.2f}%",
+                f"MA60斜率: {market_analysis['ma60_slope']:.2f}%"
+            )
+        
+        # 显示均线排列图
+        st.subheader("📊 上证指数均线排列图")
+        
+        # 准备绘图数据
+        plot_data = shanghai_data.copy()
+        plot_data['MA5'] = calculate_ma(plot_data, 5)
+        plot_data['MA10'] = calculate_ma(plot_data, 10)
+        plot_data['MA20'] = calculate_ma(plot_data, 20)
+        plot_data['MA60'] = calculate_ma(plot_data, 60)
+        plot_data['MA120'] = calculate_ma(plot_data, 120)
+        
+        # 创建Plotly图表
+        fig = go.Figure()
+        
+        # 添加K线图（简化版，用收盘价线图代替）
+        fig.add_trace(go.Scatter(
+            x=plot_data['date'],
+            y=plot_data['close'],
+            mode='lines',
+            name='上证指数',
+            line=dict(color='#1f77b4', width=2)
+        ))
+        
+        # 添加均线
+        fig.add_trace(go.Scatter(
+            x=plot_data['date'],
+            y=plot_data['MA5'],
+            mode='lines',
+            name='MA5',
+            line=dict(color='#ff7f0e', width=1)
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=plot_data['date'],
+            y=plot_data['MA10'],
+            mode='lines',
+            name='MA10',
+            line=dict(color='#2ca02c', width=1)
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=plot_data['date'],
+            y=plot_data['MA20'],
+            mode='lines',
+            name='MA20',
+            line=dict(color='#d62728', width=1.5)
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=plot_data['date'],
+            y=plot_data['MA60'],
+            mode='lines',
+            name='MA60',
+            line=dict(color='#9467bd', width=1.5)
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=plot_data['date'],
+            y=plot_data['MA120'],
+            mode='lines',
+            name='MA120',
+            line=dict(color='#8c564b', width=1.5)
+        ))
+        
+        # 更新布局
+        fig.update_layout(
+            title='上证指数均线系统分析',
+            xaxis_title='日期',
+            yaxis_title='点位',
+            height=500,
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # 显示详细分析
+        st.subheader("🔍 详细分析")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**📊 均线排列状态：**")
+            for reason in market_analysis['strength_reasons'][:4]:  # 前4个是均线相关
+                st.write(reason)
+        
+        with col2:
+            st.markdown("**📈 趋势与指标：**")
+            for reason in market_analysis['strength_reasons'][4:]:  # 后几个是趋势和MACD
+                st.write(reason)
+        
+        # 投资建议
+        st.subheader("💡 大盘投资建议")
+        
+        if market_analysis['strength_score'] >= 80:
+            st.success("**🔥 强势市场建议：** 大盘处于强势状态，均线多头排列，可积极配置股票资产，重点关注强势板块和个股。")
+        elif market_analysis['strength_score'] >= 60:
+            st.info("**📈 偏强市场建议：** 大盘整体偏强，但需关注短期调整风险，可适度配置，建议分批建仓。")
+        elif market_analysis['strength_score'] >= 40:
+            st.warning("**⚖️ 中性市场建议：** 大盘处于震荡状态，建议控制仓位，等待明确方向，可关注防御性板块。")
+        elif market_analysis['strength_score'] >= 20:
+            st.warning("**📉 偏弱市场建议：** 大盘偏弱，建议降低仓位，关注超跌反弹机会，以防御为主。")
+        else:
+            st.error("**💀 弱势市场建议：** 大盘处于弱势，建议大幅降低仓位，等待市场企稳，可关注债券等避险资产。")
+        
+        st.markdown("---")
+    else:
+        st.error("无法分析大盘强势状态，请检查数据获取")
+else:
+    st.error("无法获取上证指数数据，请检查网络连接")
 
 # 宽基指数配置
 BROAD_INDICES = {
@@ -1052,6 +1398,165 @@ if run_btn:
                         st.write("---")
                 else:
                     st.write("暂无跑赢上证指数的指数")
+        
+        # 市场风格判断
+        st.subheader("🎭 市场风格判断")
+        
+        # 计算各风格指数的平均表现
+        style_analysis = {}
+        
+        # 大盘蓝筹风格（沪深300、中证800）
+        large_cap = returns_df[returns_df['指数代码'].isin(['000300', '000906'])]
+        if not large_cap.empty:
+            style_analysis['大盘蓝筹'] = {
+                '20日': large_cap['相对上证20日超额收益'].mean(),
+                '40日': large_cap['相对上证40日超额收益'].mean(),
+                '年初至今': large_cap['相对上证年初至今超额收益'].mean(),
+                '指数': list(large_cap['指数名称'])
+            }
+        
+        # 中盘成长风格（中证500、中证1000）
+        mid_cap = returns_df[returns_df['指数代码'].isin(['000500', '000852'])]
+        if not mid_cap.empty:
+            style_analysis['中盘成长'] = {
+                '20日': mid_cap['相对上证20日超额收益'].mean(),
+                '40日': mid_cap['相对上证40日超额收益'].mean(),
+                '年初至今': mid_cap['相对上证年初至今超额收益'].mean(),
+                '指数': list(mid_cap['指数名称'])
+            }
+        
+        # 小盘成长风格（中证2000、国证2000）
+        small_cap = returns_df[returns_df['指数代码'].isin(['932000', '399303'])]
+        if not small_cap.empty:
+            style_analysis['小盘成长'] = {
+                '20日': small_cap['相对上证20日超额收益'].mean(),
+                '40日': small_cap['相对上证40日超额收益'].mean(),
+                '年初至今': small_cap['相对上证年初至今超额收益'].mean(),
+                '指数': list(small_cap['指数名称'])
+            }
+        
+        # 科技创新风格（科创50、创业板指）
+        tech_innovation = returns_df[returns_df['指数代码'].isin(['000688', '399006'])]
+        if not tech_innovation.empty:
+            style_analysis['科技创新'] = {
+                '20日': tech_innovation['相对上证20日超额收益'].mean(),
+                '40日': tech_innovation['相对上证40日超额收益'].mean(),
+                '年初至今': tech_innovation['相对上证年初至今超额收益'].mean(),
+                '指数': list(tech_innovation['指数名称'])
+            }
+        
+        # 全市场风格（中证全指、北证50）
+        broad_market = returns_df[returns_df['指数代码'].isin(['000985', '899050'])]
+        if not broad_market.empty:
+            style_analysis['全市场'] = {
+                '20日': broad_market['相对上证20日超额收益'].mean(),
+                '40日': broad_market['相对上证40日超额收益'].mean(),
+                '年初至今': broad_market['相对上证年初至今超额收益'].mean(),
+                '指数': list(broad_market['指数名称'])
+            }
+        
+        # 显示市场风格分析结果
+        if style_analysis:
+            # 创建风格分析表格
+            style_data = []
+            for style, data in style_analysis.items():
+                style_data.append({
+                    '市场风格': style,
+                    '代表指数': ', '.join(data['指数']),
+                    '20日超额收益': f"{data['20日']:.2f}%",
+                    '40日超额收益': f"{data['40日']:.2f}%",
+                    '年初至今超额收益': f"{data['年初至今']:.2f}%"
+                })
+            
+            style_df = pd.DataFrame(style_data)
+            
+            # 应用颜色样式
+            def color_style_returns(val):
+                if pd.isna(val):
+                    return ''
+                try:
+                    num_val = float(val.replace('%', ''))
+                    if num_val > 0:
+                        return 'background-color: #f8d7da; color: #721c24'  # 红色背景（涨）
+                    elif num_val < 0:
+                        return 'background-color: #d4edda; color: #155724'  # 绿色背景（跌）
+                    else:
+                        return ''
+                except:
+                    return ''
+            
+            styled_style_df = style_df.style.apply(
+                lambda x: [color_style_returns(val) if col in ['20日超额收益', '40日超额收益', '年初至今超额收益'] else '' 
+                          for col, val in x.items()], 
+                subset=['20日超额收益', '40日超额收益', '年初至今超额收益']
+            )
+            
+            st.dataframe(styled_style_df, use_container_width=True)
+            
+            # 市场风格判断结论
+            st.subheader("🎯 市场风格判断结论")
+            
+            # 找出各时间窗口表现最好的风格
+            best_20d_style = max(style_analysis.items(), key=lambda x: x[1]['20日'])
+            best_40d_style = max(style_analysis.items(), key=lambda x: x[1]['40日'])
+            best_ytd_style = max(style_analysis.items(), key=lambda x: x[1]['年初至今'])
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric(
+                    "20日最强风格",
+                    best_20d_style[0],
+                    f"+{best_20d_style[1]['20日']:.2f}%"
+                )
+            
+            with col2:
+                st.metric(
+                    "40日最强风格",
+                    best_40d_style[0],
+                    f"+{best_40d_style[1]['40日']:.2f}%"
+                )
+            
+            with col3:
+                st.metric(
+                    "年初至今最强风格",
+                    best_ytd_style[0],
+                    f"+{best_ytd_style[1]['年初至今']:.2f}%"
+                )
+            
+            # 风格轮动分析
+            st.markdown("**🔄 风格轮动分析：**")
+            
+            # 计算风格轮动强度
+            style_rotation = {}
+            for style, data in style_analysis.items():
+                # 计算短期vs中期的风格变化
+                short_vs_mid = data['20日'] - data['40日']
+                # 计算中期vs长期的风格变化
+                mid_vs_long = data['40日'] - data['年初至今']
+                style_rotation[style] = {
+                    '短期vs中期': short_vs_mid,
+                    '中期vs长期': mid_vs_long,
+                    '轮动强度': abs(short_vs_mid) + abs(mid_vs_long)
+                }
+            
+            # 找出轮动最活跃的风格
+            most_active_style = max(style_rotation.items(), key=lambda x: x[1]['轮动强度'])
+            
+            st.info(f"**最活跃风格：** {most_active_style[0]} (轮动强度: {most_active_style[1]['轮动强度']:.2f})")
+            
+            # 投资策略建议
+            st.markdown("**💡 投资策略建议：**")
+            
+            # 根据风格表现给出建议
+            if best_20d_style[1]['20日'] > 0 and best_40d_style[1]['40日'] > 0:
+                st.success(f"**强势风格确认：** {best_20d_style[0]}和{best_40d_style[0]}在短期和中期都表现强势，建议重点关注")
+            elif best_20d_style[1]['20日'] > 0 and best_40d_style[1]['40日'] < 0:
+                st.warning(f"**风格切换信号：** {best_20d_style[0]}短期走强，但中期仍弱，需观察持续性")
+            elif best_20d_style[1]['20日'] < 0 and best_40d_style[1]['40日'] > 0:
+                st.warning(f"**风格调整信号：** {best_40d_style[0]}中期走强，但短期调整，可逢低关注")
+            else:
+                st.error("**弱势风格：** 各风格指数普遍跑输上证指数，建议谨慎操作，等待市场企稳")
         
         # 下载功能
         st.subheader("💾 下载分析结果")

@@ -44,6 +44,7 @@ st.markdown("""
 # 导入数据模块
 from data import get_etf_list, fetch_etf_data_with_retry
 from utils import get_etf_options_with_favorites
+from utils import get_favorite_etfs # Added missing import
 
 def categorize_etf(name):
     """根据ETF名称进行分类"""
@@ -142,11 +143,43 @@ filtered_options = etf_options_with_names
 if 'selected_etfs' not in st.session_state:
     st.session_state.selected_etfs = filtered_options[:3] if filtered_options else []
 
+# 确保默认值在可选项范围内
+default_selection = []
+if filtered_options:
+    # 优先选择自选ETF
+    favorite_etfs = get_favorite_etfs()
+    if favorite_etfs:
+        # 从自选ETF中选择前3个在可选项中的
+        for fav in favorite_etfs:
+            if len(default_selection) >= 3:
+                break
+            # 查找自选ETF在可选项中的完整信息
+            for option in filtered_options:
+                if option.startswith(fav + " - "):
+                    default_selection.append(option)
+                    break
+    
+    # 如果自选ETF不足3个，从所有可选项中补充
+    if len(default_selection) < 3:
+        for option in filtered_options:
+            if option not in default_selection:
+                default_selection.append(option)
+                if len(default_selection) >= 3:
+                    break
+    
+    # 更新session_state
+    st.session_state.selected_etfs = default_selection
+
 # ETF选择器 - 使用multiselect下拉选择器
+# 确保默认值在可选项中
+valid_defaults = [etf for etf in st.session_state.selected_etfs if etf in filtered_options]
+if not valid_defaults and filtered_options:
+    valid_defaults = filtered_options[:3]
+
 selected_etfs = st.multiselect(
     "选择要对比的ETF（可多选）",
     options=filtered_options,
-    default=st.session_state.selected_etfs,
+    default=valid_defaults,
     key="etf_selector",
     help="选择要对比分析的ETF，建议选择3-5只进行对比。自选ETF会优先显示。"
 )

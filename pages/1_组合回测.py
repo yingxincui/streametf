@@ -257,16 +257,17 @@ def portfolio_backtest():
             colors = px.colors.qualitative.Set3
             for i, col in enumerate(st.session_state.etf_data.columns):
                 symbol = col.split('_')[0]
-                color = colors[i % len(colors)]
-                fig.add_trace(go.Scatter(
-                    x=st.session_state.etf_data[col].index,
-                    y=st.session_state.etf_data[col] / st.session_state.etf_data[col].iloc[0],
-                    mode='lines',
-                    name=f"{st.session_state.etf_names[symbol]}",
-                    line=dict(color=color, width=1.5),
-                    opacity=0.7,
-                    hovertemplate='<b>%{x}</b><br>%{fullData.name}<br>净值: %{y:.4f}<extra></extra>'
-                ))
+                if symbol in st.session_state.etf_names:  # 添加安全检查
+                    color = colors[i % len(colors)]
+                    fig.add_trace(go.Scatter(
+                        x=st.session_state.etf_data[col].index,
+                        y=st.session_state.etf_data[col] / st.session_state.etf_data[col].iloc[0],
+                        mode='lines',
+                        name=f"{st.session_state.etf_names[symbol]}",
+                        line=dict(color=color, width=1.5),
+                        opacity=0.7,
+                        hovertemplate='<b>%{x}</b><br>%{fullData.name}<br>净值: %{y:.4f}<extra></extra>'
+                    ))
             
             # 绘制基准
             if st.session_state.benchmark_value is not None:
@@ -553,8 +554,8 @@ def portfolio_backtest():
             
             # 创建饼图显示各ETF的权重
             fig = go.Figure(data=[go.Pie(
-                labels=[f"{etf} - {st.session_state.etf_names[etf]}" for etf in st.session_state.selected_etfs],
-                values=weights,
+                labels=[f"{etf} - {st.session_state.etf_names[etf]}" for etf in st.session_state.selected_etfs if etf in st.session_state.etf_names],
+                values=[weights[st.session_state.selected_etfs.index(etf)] for etf in st.session_state.selected_etfs if etf in st.session_state.etf_names],
                 hole=0.3,
                 textinfo='label+percent',
                 textposition='inside',
